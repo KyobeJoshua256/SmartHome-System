@@ -1,0 +1,1009 @@
+/* ============================================
+   SECTION 1: CSS VARIABLES & THEME SYSTEM
+   ============================================ */
+
+/* Dark Mode (Default) */
+:root {
+  /* Color System */
+  --color-primary: #3b82f6;
+  --color-primary-hover: #2563eb;
+  --color-secondary: #8b5cf6;
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
+  --color-info: #06b6d4;
+
+  /* Background Colors */
+  --bg-primary: #0f172a;
+  --bg-secondary: #1e293b;
+  --bg-tertiary: #334155;
+
+  /* Text Colors */
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-tertiary: #64748b;
+
+  /* Gradients */
+  --gradient-primary: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+  --gradient-secondary: linear-gradient(135deg, #10b981 0%, #3b82f6 100%);
+
+  /* Glass Effects */
+  --glass-dark: rgba(17, 24, 39, 0.7);
+  --glass-light: rgba(255, 255, 255, 0.05);
+  --glass-border: rgba(255, 255, 255, 0.1);
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  --shadow-glow: 0 0 30px rgba(59, 130, 246, 0.3);
+
+  /* Transitions */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 500ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Border Radius */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-full: 9999px;
+}
+
+/* Light Mode Overrides */
+.light-mode {
+  --color-primary: #1e40af;
+  --color-primary-hover: #1d4ed8;
+  --color-secondary: #4f46e5;
+  --color-success: #059669;
+  --color-warning: #d97706;
+  --color-danger: #dc2626;
+  --color-info: #0891b2;
+  --bg-primary: #f8fafc;
+  --bg-secondary: #f1f5f9;
+  --bg-tertiary: #e2e8f0;
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --text-tertiary: #64748b;
+  --gradient-primary: linear-gradient(135deg, #1e40af 0%, #4f46e5 100%);
+  --glass-dark: rgba(255, 255, 255, 0.92);
+  --glass-light: rgba(0, 0, 0, 0.03);
+  --glass-border: rgba(0, 0, 0, 0.08);
+}
+
+/* ============================================
+   SECTION 2: BASE & RESET STYLES
+   ============================================ */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: "Poppins", "Segoe UI", sans-serif;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  transition: background var(--transition-slow);
+  padding: 20px;
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* ============================================
+   SECTION 3: BACKGROUND EFFECTS
+   ============================================ */
+
+#particles-background {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* ============================================
+   SECTION 4: THEME TOGGLE BUTTON
+   ============================================ */
+
+.theme-toggle {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 1000;
+}
+
+.theme-toggle-btn {
+  width: 56px;
+  height: 56px;
+  background: var(--glass-dark);
+  backdrop-filter: blur(20px);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  border: 2px solid var(--glass-border);
+  transition: all var(--transition-normal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.theme-toggle-btn:hover {
+  transform: scale(1.1) rotate(15deg);
+  box-shadow: var(--shadow-glow);
+  border-color: var(--color-primary);
+}
+
+.theme-icon {
+  position: relative;
+  width: 22px;
+  height: 22px;
+}
+
+.moon-icon, .sun-icon {
+  position: absolute;
+  font-size: 16px;
+  transition: all var(--transition-normal);
+  color: var(--text-secondary);
+}
+
+.moon-icon { opacity: 1; transform: rotate(0deg); }
+.sun-icon { opacity: 0; transform: rotate(90deg); }
+
+.light-mode .moon-icon { opacity: 0; transform: rotate(-90deg); }
+.light-mode .sun-icon { opacity: 1; transform: rotate(0deg); }
+
+/* ============================================
+   SECTION 5: LOADING SKELETON
+   ============================================ */
+
+.skeleton {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--bg-primary);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.skeleton-content {
+  width: 90%;
+  max-width: 400px;
+  padding: 40px;
+  background: var(--glass-dark);
+  backdrop-filter: blur(20px);
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--glass-border);
+  animation: pulse 2s infinite;
+}
+
+.skeleton-logo {
+  width: 120px;
+  height: 40px;
+  background: var(--glass-light);
+  border-radius: var(--radius-md);
+  margin: 0 auto 30px;
+}
+
+.skeleton-form { display: flex; flex-direction: column; gap: 20px; }
+.skeleton-input, .skeleton-button {
+  height: 56px;
+  background: var(--glass-light);
+  border-radius: var(--radius-md);
+}
+
+/* ============================================
+   SECTION 6: LOGIN CONTAINER & CARD
+   ============================================ */
+
+.login-container {
+  position: relative;
+  z-index: 10;
+  background: var(--glass-dark);
+  backdrop-filter: blur(40px);
+  padding: 50px;
+  border-radius: var(--radius-xl);
+  width: 100%;
+  max-width: 500px;
+  box-shadow: var(--shadow-xl);
+  border: 1px solid var(--glass-border);
+  animation: fadeInScale var(--transition-slow) ease-out;
+}
+
+.login-container::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: var(--gradient-primary);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+}
+
+/* ============================================
+   SECTION 7: LOGO & BRANDING
+   ============================================ */
+
+.logo-container { text-align: center; margin-bottom: 40px; }
+
+.logo-icon {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  margin: 0 auto 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.logo-icon i { font-size: 40px; color: var(--color-primary); animation: neonGlow 2s infinite; }
+
+.logo-glow {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background: var(--gradient-primary);
+  border-radius: 50%;
+  filter: blur(20px);
+  opacity: 0.3;
+  animation: float 6s ease-in-out infinite;
+}
+
+.logo {
+  font-size: 2.5rem;
+  font-weight: 700;
+  font-family: "Orbitron", sans-serif;
+  margin-bottom: 10px;
+}
+
+.logo-gradient {
+  background: var(--gradient-primary);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.tagline { font-size: 1rem; color: var(--text-secondary); margin-bottom: 30px; }
+.cursor { display: inline-block; animation: blink 1s infinite; color: var(--color-primary); }
+
+/* ============================================
+   SECTION 8: QUICK LOGIN BUTTONS
+   ============================================ */
+
+.quick-login { display: flex; justify-content: center; gap: 25px; margin: 30px 0; }
+
+.quick-login-btn {
+  width: 70px;
+  height: 70px;
+  border-radius: var(--radius-full);
+  background: var(--glass-light);
+  border: 2px solid var(--glass-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  text-decoration: none;
+  color: var(--color-primary);
+  position: relative;
+}
+
+.quick-login-btn:hover {
+  transform: translateY(-5px) scale(1.1);
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-glow);
+}
+
+.quick-login-btn.active {
+  background: var(--glass-dark);
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-glow);
+}
+
+.quick-icon { font-size: 28px; transition: transform var(--transition-normal); }
+.quick-login-btn:hover .quick-icon { transform: scale(1.2); }
+
+/* ============================================
+   SECTION 9: FLASH MESSAGES & ALERTS
+   ============================================ */
+
+.alert {
+  animation: slideInUp 0.6s ease;
+  margin-bottom: 20px;
+  padding: 16px 24px;
+  border-radius: var(--radius-md);
+  position: relative;
+  backdrop-filter: blur(10px);
+  border: 1px solid;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.alert-success { background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.3); color: var(--color-success); }
+.alert-error, .alert-danger { background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.3); color: var(--color-danger); }
+.alert-warning { background: rgba(245, 158, 11, 0.15); border-color: rgba(245, 158, 11, 0.3); color: var(--color-warning); }
+.alert-info { background: rgba(59, 130, 246, 0.15); border-color: rgba(59, 130, 246, 0.3); color: var(--color-info); }
+
+.alert .close-btn {
+  margin-left: auto;
+  background: rgba(255,255,255,0.1);
+  border: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  cursor: pointer;
+  color: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.alert .close-btn:hover { background: rgba(255,255,255,0.2); transform: scale(1.1); }
+
+/* ============================================
+   SECTION 10: FORM ELEMENTS & INPUTS
+   ============================================ */
+
+.form-group { position: relative; margin-bottom: 30px; }
+
+.form-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.form-label i { color: var(--color-primary); }
+
+.form-input {
+  width: 100%;
+  padding: 18px 20px;
+  background: var(--glass-light);
+  border: 2px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 1rem;
+  transition: all var(--transition-normal);
+  font-family: inherit;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.2);
+}
+
+.form-input.input-error { border-color: var(--color-danger); }
+
+.input-feedback {
+  font-size: 0.85rem;
+  margin-top: 8px;
+  color: var(--text-tertiary);
+  min-height: 20px;
+}
+
+.form-errors {
+  font-size: 0.85rem;
+  margin-top: 8px;
+  color: var(--color-danger);
+  list-style: none;
+}
+
+/* Password Container */
+.password-container { position: relative; }
+
+.toggle-password {
+  position: absolute;
+  right: 15px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 5px;
+}
+
+/* ============================================
+   SECTION 11: PASSWORD STRENGTH METER
+   ============================================ */
+
+.password-strength { margin-top: 15px; }
+
+.strength-label {
+  font-size: 0.85rem;
+  color: var(--text-tertiary);
+  margin-bottom: 8px;
+}
+
+.strength-meter { display: flex; align-items: center; gap: 15px; }
+.strength-bars { flex: 1; display: flex; gap: 4px; }
+
+.strength-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--glass-light);
+  border-radius: 3px;
+  transition: all var(--transition-normal);
+}
+
+.strength-bar[data-level="1"].active { background: var(--color-danger); }
+.strength-bar[data-level="2"].active { background: var(--color-warning); }
+.strength-bar[data-level="3"].active { background: #f59e0b; }
+.strength-bar[data-level="4"].active { background: var(--color-success); }
+
+.strength-text {
+  font-size: 0.85rem;
+  font-weight: 500;
+  min-width: 80px;
+  text-align: right;
+}
+
+/* ============================================
+   SECTION 12: CHECKBOX & FORM OPTIONS
+   ============================================ */
+
+.form-options { margin-bottom: 30px; }
+
+.checkbox-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+
+.checkbox-container input { display: none; }
+
+.checkbox-custom {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--glass-border);
+  border-radius: 6px;
+  position: relative;
+  transition: all var(--transition-fast);
+}
+
+.checkbox-container input:checked ~ .checkbox-custom {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.checkbox-container input:checked ~ .checkbox-custom::after {
+  content: "✓";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: white;
+  font-size: 12px;
+}
+
+/* ============================================
+   SECTION 13: BUTTONS & CTA
+   ============================================ */
+
+.btn {
+  position: relative;
+  width: 100%;
+  padding: 18px;
+  background: var(--gradient-primary);
+  border: none;
+  border-radius: var(--radius-md);
+  color: white;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  overflow: hidden;
+}
+
+.btn:hover { transform: translateY(-2px); box-shadow: var(--shadow-glow); }
+
+.btn-content {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.btn-shine {
+  position: absolute;
+  top: -100%;
+  left: -100%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(45deg, transparent 30%, rgba(255,255,255,0.1) 50%, transparent 70%);
+  transform: rotate(45deg);
+  animation: shimmer 3s infinite;
+}
+
+.btn-secondary {
+  background: transparent;
+  border: 2px solid var(--glass-border);
+  color: var(--text-primary);
+  margin-top: 15px;
+}
+
+.btn-secondary:hover {
+  background: var(--glass-light);
+  border-color: var(--color-primary);
+}
+
+.btn-locked {
+  opacity: 0.45 !important;
+  cursor: not-allowed !important;
+  pointer-events: none;
+}
+
+/* ============================================
+   SECTION 14: TOKEN LOGIN & TIMER
+   ============================================ */
+
+.token-timer {
+  background: var(--glass-light);
+  border-radius: var(--radius-md);
+  padding: 15px 20px;
+  margin-bottom: 30px;
+  border: 1px solid var(--glass-border);
+}
+
+.timer-content { display: flex; align-items: center; gap: 15px; }
+
+.timer-progress {
+  flex: 1;
+  height: 6px;
+  background: var(--glass-border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.timer-progress-bar {
+  height: 100%;
+  background: var(--gradient-primary);
+  width: 100%;
+  transition: width 1s linear;
+}
+
+.token-input {
+  letter-spacing: 12px;
+  text-align: center;
+  font-size: 1.5rem;
+  font-weight: 600;
+  font-family: "Orbitron", monospace;
+  padding: 20px;
+}
+
+.token-hint {
+  font-size: 0.85rem;
+  color: var(--text-tertiary);
+  margin-top: 8px;
+  text-align: center;
+}
+
+/* ============================================
+   SECTION 15: LOCKOUT CLOCK OVERLAY
+   ============================================ */
+
+.lockout-clock-overlay {
+  position: relative;
+  background: rgba(15, 23, 42, 0.95);
+  backdrop-filter: blur(12px);
+  border-radius: 24px;
+  padding: 24px;
+  margin: 20px 0;
+  text-align: center;
+  animation: fadeInUp 0.4s cubic-bezier(0.2, 0.9, 0.4, 1.1);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+.light-mode .lockout-clock-overlay {
+  background: rgba(255, 255, 255, 0.95);
+  border-color: rgba(0, 100, 255, 0.2);
+}
+
+.lockout-clock-overlay.hiding {
+  animation: fadeOutDown 0.4s cubic-bezier(0.2, 0.9, 0.4, 1.1) forwards;
+}
+
+.lockout-clock-dismiss {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lockout-clock-dismiss:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: var(--text-primary);
+  transform: scale(1.05);
+}
+
+.lockout-clock-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.lockout-clock-header i {
+  font-size: 28px;
+  color: #f59e0b;
+}
+
+.lockout-clock-header h4 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* SVG Clock */
+.lockout-svg-clock {
+  position: relative;
+  width: 160px;
+  height: 160px;
+  margin: 0 auto 24px;
+}
+
+.lockout-svg-clock svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.clock-track {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.1);
+  stroke-width: 6;
+}
+
+.light-mode .clock-track {
+  stroke: rgba(0, 0, 0, 0.1);
+}
+
+.clock-arc {
+  fill: none;
+  stroke: #3b82f6;
+  stroke-width: 6;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.1s linear;
+}
+
+.lockout-svg-clock.state-warning .clock-arc {
+  stroke: #f59e0b;
+}
+
+.lockout-svg-clock.state-critical .clock-arc {
+  stroke: #ef4444;
+  animation: pulseCritical 1s ease-in-out infinite;
+}
+
+.clock-glow-ring {
+  fill: none;
+  stroke: rgba(59, 130, 246, 0.2);
+  stroke-width: 2;
+}
+
+.clock-tick {
+  stroke: var(--text-secondary);
+  stroke-width: 2;
+}
+
+.lockout-clock-digits {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+}
+
+.lockout-digits-time {
+  font-size: 32px;
+  font-weight: 700;
+  font-family: 'Orbitron', monospace;
+  color: var(--text-primary);
+  letter-spacing: 2px;
+}
+
+.state-critical .lockout-digits-time {
+  color: var(--color-danger);
+  animation: pulseCritical 1s infinite;
+}
+
+.lockout-digits-label {
+  font-size: 10px;
+  color: var(--text-secondary);
+  display: block;
+  margin-top: 4px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.lockout-clock-msg {
+  margin: 20px 0 8px;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+}
+
+.lockout-clock-msg strong {
+  color: #f59e0b;
+}
+
+.lockout-clock-hint {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.lockout-account-info {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--glass-border);
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.lockout-account-info i {
+  color: #f59e0b;
+}
+
+.lockout-hidden {
+  display: none !important;
+}
+
+/* ============================================
+   SECTION 16: USER STATUS INDICATORS
+   ============================================ */
+
+.user-status-indicator {
+  font-size: 0.75rem;
+  padding: 6px 14px;
+  border-radius: 30px;
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  animation: fadeInUp 0.3s ease-out;
+}
+
+.user-status-indicator i { font-size: 0.8rem; }
+
+.user-exists {
+  background: rgba(16, 185, 129, 0.12);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+
+.user-not-found {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.user-locked {
+  background: rgba(245, 158, 11, 0.12);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.25);
+}
+
+.attempts-warning {
+  font-size: 0.75rem;
+  padding: 6px 14px;
+  border-radius: 30px;
+  margin-top: 10px;
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  animation: pulse 2s infinite;
+}
+
+.user-status-loading {
+  position: absolute;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-secondary);
+  z-index: 10;
+}
+
+/* ============================================
+   SECTION 17: FOOTER LINKS
+   ============================================ */
+
+.footer-links {
+  display: flex;
+  justify-content: center;
+  gap: 30px;
+  margin-top: 40px;
+  padding-top: 30px;
+  border-top: 1px solid var(--glass-border);
+  flex-wrap: wrap;
+}
+
+.footer-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-tertiary);
+  text-decoration: none;
+  font-size: 0.9rem;
+  transition: all var(--transition-fast);
+  padding: 10px 15px;
+  border-radius: var(--radius-md);
+  position: relative;
+}
+
+.footer-link:hover {
+  color: var(--color-primary);
+  background: var(--glass-light);
+}
+
+/* ============================================
+   SECTION 18: CONNECTION STATUS
+   ============================================ */
+
+.connection-status {
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: rgba(255,255,255,0.1);
+  backdrop-filter: blur(10px);
+  border-radius: 20px;
+  font-size: 0.875rem;
+  z-index: 1000;
+}
+
+.connection-status.online {
+  color: var(--color-success);
+  border-color: rgba(16,185,129,0.3);
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  animation: pulse 2s infinite;
+}
+
+.connection-status.online .status-dot {
+  background: var(--color-success);
+}
+
+/* ============================================
+   SECTION 19: ANIMATIONS
+   ============================================ */
+
+@keyframes neonGlow {
+  0%,100% { filter: drop-shadow(0 0 5px currentColor); }
+  50% { filter: drop-shadow(0 0 15px currentColor); }
+}
+
+@keyframes float {
+  0%,100% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(59,130,246,0.7); }
+  70% { box-shadow: 0 0 0 15px rgba(59,130,246,0); }
+  100% { box-shadow: 0 0 0 0 rgba(59,130,246,0); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -1000px 0; }
+  100% { background-position: 1000px 0; }
+}
+
+@keyframes fadeInScale {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes blink {
+  0%,100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@keyframes slideInUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(15px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeOutDown {
+  to { opacity: 0; transform: translateY(15px); }
+}
+
+@keyframes pulseCritical {
+  0%,100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes pulseStroke {
+  0%,100% { stroke-opacity: 1; }
+  50% { stroke-opacity: 0.5; }
+}
+
+/* ============================================
+   SECTION 20: RESPONSIVE DESIGN
+   ============================================ */
+
+@media (max-width: 768px) {
+  .login-container { padding: 40px 30px; max-width: 450px; }
+  .logo { font-size: 2rem; }
+  .quick-login-btn { width: 60px; height: 60px; }
+  .quick-icon { font-size: 24px; }
+}
+
+@media (max-width: 480px) {
+  .login-container { padding: 30px 20px; }
+  .logo { font-size: 1.75rem; }
+  .quick-login { gap: 15px; }
+  .quick-login-btn { width: 55px; height: 55px; }
+  .lockout-clock-overlay { padding: 16px; margin: 16px 0; }
+  .lockout-svg-clock { width: 120px; height: 120px; }
+  .lockout-digits-time { font-size: 24px; }
+  .lockout-clock-header i { font-size: 22px; }
+  .lockout-clock-header h4 { font-size: 1rem; }
+  .lockout-clock-msg { font-size: 0.8rem; }
+}
+
+/* ============================================
+   SECTION 21: ACCESSIBILITY & UTILITIES
+   ============================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+

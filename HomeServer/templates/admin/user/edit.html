@@ -1,0 +1,144 @@
+{% extends 'admin/model/edit.html' %}
+
+{% block tail %}
+  {{ super() }}
+
+  <style>
+    .pw-wrapper {
+      position: relative;
+    }
+    .pw-wrapper .form-control {
+      padding-right: 2.8rem;
+    }
+    .pw-toggle {
+      position: absolute;
+      top: 50%;
+      right: 0.75rem;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: #6c757d;
+      padding: 0;
+      line-height: 1;
+    }
+    .pw-toggle:hover { color: #343a40; }
+
+    /* Strength bar */
+    #pw-strength-bar {
+      height: 4px;
+      border-radius: 2px;
+      transition: width 0.3s, background-color 0.3s;
+      width: 0;
+    }
+    #pw-strength-label {
+      font-size: 0.78rem;
+    }
+  </style>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+
+      // -----------------------------------------------------------------
+      // 1. Show / hide toggle for each password field
+      // -----------------------------------------------------------------
+      function addToggle(inputId) {
+        var input = document.getElementById(inputId);
+        if (!input) return;
+
+        // Wrap in relative container
+        var wrapper = document.createElement("div");
+        wrapper.className = "pw-wrapper";
+        input.parentNode.insertBefore(wrapper, input);
+        wrapper.appendChild(input);
+
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "pw-toggle";
+        btn.title = "Show / hide";
+        btn.innerHTML = '<i class="fas fa-eye"></i>';
+        wrapper.appendChild(btn);
+
+        btn.addEventListener("click", function () {
+          var isHidden = input.type === "password";
+          input.type = isHidden ? "text" : "password";
+          btn.innerHTML = isHidden
+            ? '<i class="fas fa-eye-slash"></i>'
+            : '<i class="fas fa-eye"></i>';
+        });
+      }
+
+      addToggle("field-password");
+      addToggle("field-password-confirm");
+
+      // -----------------------------------------------------------------
+      // 2. Live password-strength indicator (no external library)
+      // -----------------------------------------------------------------
+      var pwInput = document.getElementById("field-password");
+      if (!pwInput) return;
+
+      // Inject strength bar below the password field wrapper
+      var strengthHtml = [
+        '<div class="mt-1">',
+        '  <div class="progress" style="height:4px;background:#e9ecef">',
+        '    <div id="pw-strength-bar" class="progress-bar"></div>',
+        '  </div>',
+        '  <small id="pw-strength-label" class="text-muted"></small>',
+        '</div>'
+      ].join("");
+
+      pwInput.closest(".form-group") &&
+        pwInput.closest(".form-group").insertAdjacentHTML("beforeend", strengthHtml);
+
+      var bar   = document.getElementById("pw-strength-bar");
+      var label = document.getElementById("pw-strength-label");
+
+      function scorePassword(pw) {
+        var score = 0;
+        if (!pw) return { score: 0, text: "", color: "" };
+        if (pw.length >= 8)  score++;
+        if (pw.length >= 12) score++;
+        if (/[A-Z]/.test(pw)) score++;
+        if (/[0-9]/.test(pw)) score++;
+        if (/[^A-Za-z0-9]/.test(pw)) score++;
+        var levels = [
+          { pct: "20%",  color: "#dc3545", text: "Very weak"  },
+          { pct: "40%",  color: "#fd7e14", text: "Weak"       },
+          { pct: "60%",  color: "#ffc107", text: "Fair"       },
+          { pct: "80%",  color: "#20c997", text: "Strong"     },
+          { pct: "100%", color: "#198754", text: "Very strong" },
+        ];
+        return levels[Math.min(score, levels.length) - 1] ||
+               { pct: "0%", color: "", text: "" };
+      }
+
+      pwInput.addEventListener("input", function () {
+        if (!bar || !label) return;
+        var result = scorePassword(pwInput.value);
+        bar.style.width           = result.pct   || "0%";
+        bar.style.backgroundColor = result.color || "transparent";
+        label.textContent         = result.text  || "";
+        label.style.color         = result.color || "";
+      });
+
+      // -----------------------------------------------------------------
+      // 3. Live confirm-match indicator
+      // -----------------------------------------------------------------
+      var confirmInput = document.getElementById("field-password-confirm");
+      if (!confirmInput) return;
+
+      function checkMatch() {
+        if (!confirmInput.value) {
+          confirmInput.classList.remove("is-valid", "is-invalid");
+          return;
+        }
+        var match = pwInput.value === confirmInput.value;
+        confirmInput.classList.toggle("is-valid",   match);
+        confirmInput.classList.toggle("is-invalid", !match);
+      }
+
+      pwInput.addEventListener("input",      checkMatch);
+      confirmInput.addEventListener("input", checkMatch);
+    });
+  </script>
+{% endblock %}

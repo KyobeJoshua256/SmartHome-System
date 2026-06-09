@@ -1,0 +1,21 @@
+/* static/css/otp_admin.css */
+
+/* Prevent layout shift and add smooth color transitions */
+.badge.otp-countdown {
+    transition: background-color 0.3s ease, color 0.3s ease;
+    min-width: 85px; 
+    text-align: center;
+    display: inline-block;
+    font-weight: 500;
+}
+
+/* Subtle pulse animation for the "danger" state (< 1 min remaining) */
+.badge.otp-countdown.badge-danger {
+    animation: pulse-danger 1.5s infinite;
+}
+
+@keyframes pulse-danger {
+    0% { opacity: 1; }
+    50% { opacity: 0.6; }
+    100% { opacity: 1; }
+}

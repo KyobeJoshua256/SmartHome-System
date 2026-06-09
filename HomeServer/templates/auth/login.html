@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0f172a">
+  <link rel="manifest" href="/static/manifest.json">
+  <link rel="icon" href="/static/images/nora.png">
+  <title>EBS-HUB Smart Home</title>
+  <!-- Font Awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700&family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <!-- CSS -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/login.css') }}">
+  <style>
+    /* Quick login button row */
+    .quick-login {
+      display: flex;
+      justify-content: center;
+      gap: 30px;
+      margin: 30px 0;
+      flex-wrap: wrap;
+    }
+
+    .quick-login-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+    }
+
+    .quick-login-btn {
+      width: 70px;
+      height: 70px;
+      border-radius: var(--radius-full);
+      background: var(--glass-light);
+      border: 2px solid var(--glass-border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all var(--transition-normal);
+      color: var(--color-primary);
+    }
+
+    .quick-login-btn:hover {
+      transform: translateY(-5px) scale(1.1);
+      border-color: var(--color-primary);
+      box-shadow: var(--shadow-glow);
+    }
+
+    .quick-login-item.active .quick-login-btn {
+      background: var(--glass-dark);
+      border-color: var(--color-primary);
+      box-shadow: var(--shadow-glow);
+    }
+
+    .quick-icon {
+      font-size: 28px;
+      transition: transform var(--transition-normal);
+    }
+
+    .quick-login-btn:hover .quick-icon {
+      transform: scale(1.2);
+    }
+
+    .quick-login-label {
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      text-align: center;
+      transition: color var(--transition-fast);
+      letter-spacing: 0.5px;
+    }
+
+    .quick-login-item:hover .quick-login-label,
+    .quick-login-item.active .quick-login-label {
+      color: var(--color-primary);
+      font-weight: 600;
+    }
+
+    /* Light mode overrides */
+    .light-mode .quick-login-btn {
+      background: rgba(255, 255, 255, 0.8);
+      border: 1.5px solid var(--glass-border);
+    }
+
+    .light-mode .quick-login-btn:hover {
+      background: rgba(255, 255, 255, 0.95);
+      border-color: var(--color-primary);
+    }
+
+    .light-mode .quick-login-item.active .quick-login-btn {
+      background: rgba(30, 64, 175, 0.08);
+      border-color: var(--color-primary);
+    }
+
+    @media (max-width: 480px) {
+      .quick-login    { gap: 20px; }
+      .quick-login-btn { width: 55px; height: 55px; }
+      .quick-icon     { font-size: 22px; }
+      .quick-login-label { font-size: 0.65rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Theme Toggle -->
+  <div class="theme-toggle">
+    <div class="theme-toggle-btn" id="themeToggle" aria-label="Toggle theme">
+      <div class="theme-icon">
+        <i class="fas fa-moon moon-icon"></i>
+        <i class="fas fa-sun sun-icon"></i>
+      </div>
+    </div>
+  </div>
+
+  <!-- Connection Status -->
+  <div class="connection-status online" id="connectionStatus">
+    <div class="status-dot"></div>
+    <span>Connected to EBS Network</span>
+  </div>
+
+  <!-- Skeleton Loader -->
+  <div id="skeleton" class="skeleton">
+    <div class="skeleton-content">
+      <div class="skeleton-logo"></div>
+      <div class="skeleton-form">
+        <div class="skeleton-input"></div>
+        <div class="skeleton-input"></div>
+        <div class="skeleton-button"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="login-container">
+
+    <!-- Logo -->
+    <div class="logo-container">
+      <div class="logo-icon">
+        <i class="fas fa-home"></i>
+        <div class="logo-glow"></div>
+      </div>
+      <h1 class="logo">EBS Smart<span class="logo-gradient">Home</span></h1>
+      <p class="tagline">
+        <span class="typing-text" id="typingText">Secure, Intelligent Home Automation</span>
+        <span class="cursor">|</span>
+      </p>
+    </div>
+
+    <!-- Flash Messages -->
+    <div id="flash-messages-container">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            <div class="alert alert-{{ 'danger' if category == 'error' else category }} flash-message"
+                 role="alert" aria-live="polite" data-category="{{ category }}">
+              <i class="fas
+                {% if category == 'success' %}fa-check-circle
+                {% elif category in ('error', 'danger') %}fa-exclamation-triangle
+                {% elif category == 'warning' %}fa-exclamation-triangle
+                {% elif category == 'info' %}fa-info-circle
+                {% endif %}"></i>
+              <span class="alert-content">{{ message }}</span>
+              <button class="close-btn" onclick="dismissAlert(this)" type="button" aria-label="Dismiss">
+                <i class="fas fa-times"></i>
+              </button>
+            </div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+    </div>
+
+    <!-- Quick Login Method Selector -->
+    <nav class="quick-login" aria-label="Login method">
+      <a href="{{ url_for('auth.login', type='password') }}"
+         class="quick-login-item {% if auth_type == 'password' %}active{% endif %}"
+         aria-current="{{ 'page' if auth_type == 'password' else 'false' }}">
+        <div class="quick-login-btn">
+          <div class="quick-icon"><i class="fas fa-key"></i></div>
+        </div>
+        <span class="quick-login-label">Password Login</span>
+      </a>
+
+      <a href="{{ url_for('auth.login', type='token') }}"
+         class="quick-login-item {% if auth_type == 'token' %}active{% endif %}"
+         aria-current="{{ 'page' if auth_type == 'token' else 'false' }}">
+        <div class="quick-login-btn">
+          <div class="quick-icon"><i class="fas fa-comment-alt"></i></div>
+        </div>
+        <span class="quick-login-label">SMS Token Login</span>
+      </a>
+
+      <a href="#" class="quick-login-item" id="quickGuestLogin" aria-label="Guest Access (coming soon)">
+        <div class="quick-login-btn">
+          <div class="quick-icon"><i class="fas fa-user-clock"></i></div>
+        </div>
+        <span class="quick-login-label">Guest Access</span>
+      </a>
+    </nav>
+
+    <!-- Lockout Clock Overlay Container (injected by JS) -->
+    <div id="lockoutClockAnchor"></div>
+
+    <!-- ==================== PASSWORD LOGIN ==================== -->
+    {% if auth_type == 'password' %}
+    <form method="POST" action="{{ url_for('auth.login', type='password') }}"
+          class="password-form" id="passwordForm" novalidate>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+      <div class="form-group">
+        <label for="identifier" class="form-label">
+          <i class="fas fa-user"></i> Username, Email or Phone
+        </label>
+        <input type="text"
+               id="identifier"
+               name="identifier"
+               class="form-input {% if form and form.identifier.errors %}input-error{% endif %}"
+               placeholder="johndoe, user@email.com or +256700000000"
+               required
+               autocomplete="username"
+               value="{{ form.identifier.data if form and form.identifier.data else '' }}"
+               aria-label="Username, Email or Phone"
+               aria-describedby="identifierFeedback"
+               data-validation="identifier">
+        <div class="input-effects"><div class="input-focus-line"></div></div>
+        {% if form and form.identifier.errors %}
+          <ul class="form-errors" id="identifierFeedback" role="alert">
+            {% for err in form.identifier.errors %}<li>{{ err }}</li>{% endfor %}
+          </ul>
+        {% else %}
+          <div class="input-feedback" id="identifierFeedback"></div>
+        {% endif %}
+      </div>
+
+      <div class="form-group" id="passwordGroup">
+        <label for="password" class="form-label">
+          <i class="fas fa-lock"></i> Password
+        </label>
+        <div class="password-container">
+          <input type="password"
+                 id="password"
+                 name="password"
+                 class="form-input {% if form and form.password.errors %}input-error{% endif %}"
+                 placeholder="Enter your password"
+                 required
+                 autocomplete="current-password"
+                 aria-label="Password"
+                 aria-describedby="passwordFeedback"
+                 data-validation="password">
+          <button type="button" class="toggle-password" aria-label="Show/hide password">
+            <i class="fas fa-eye"></i>
+          </button>
+        </div>
+        <div class="input-effects"><div class="input-focus-line"></div></div>
+        {% if form and form.password.errors %}
+          <ul class="form-errors" id="passwordFeedback" role="alert">
+            {% for err in form.password.errors %}<li>{{ err }}</li>{% endfor %}
+          </ul>
+        {% endif %}
+
+        <div class="password-strength">
+          <div class="strength-label">Password Strength</div>
+          <div class="strength-meter">
+            <div class="strength-bars">
+              <div class="strength-bar" data-level="1"></div>
+              <div class="strength-bar" data-level="2"></div>
+              <div class="strength-bar" data-level="3"></div>
+              <div class="strength-bar" data-level="4"></div>
+            </div>
+            <div class="strength-text" id="strengthText">Very Weak</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-options" id="rememberGroup">
+        <label class="checkbox-container">
+          <input type="checkbox" id="remember_me" name="remember_me"
+                 {% if form and form.remember_me.data %}checked{% endif %}>
+          <span class="checkbox-custom"></span>
+          <span class="checkbox-label">Remember this device for 30 days</span>
+        </label>
+      </div>
+
+      <button type="submit" class="btn btn-primary" id="loginBtn">
+        <span class="btn-content">
+          <i class="fas fa-sign-in-alt btn-icon"></i>
+          <span class="btn-text">Secure Sign In</span>
+        </span>
+        <div class="btn-shine"></div>
+      </button>
+    </form>
+    {% endif %}
+
+    <!-- ==================== TOKEN (SMS OTP) LOGIN ==================== -->
+    {% if auth_type == 'token' %}
+    <form method="POST"
+          action="{{ url_for('auth.token_verify' if session_id else 'auth.login', type='token') }}"
+          class="token-form" id="tokenForm" novalidate>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+      {% if session_id %}
+        <input type="hidden" name="session_id" value="{{ session_id }}">
+        <div class="token-timer" role="timer" aria-live="polite">
+          <div class="timer-content">
+            <i class="fas fa-clock"></i>
+            <div class="timer-progress">
+              <div class="timer-progress-bar" id="timerProgressBar"></div>
+            </div>
+            <span class="timer-text">
+              Token expires in <span id="expiryTimer">300</span>s
+            </span>
+          </div>
+        </div>
+      {% endif %}
+
+      {# Step 1 — phone number entry (hidden once session_id exists) #}
+      {% if not session_id %}
+        <div class="form-group" id="phoneGroup">
+          <label for="phone" class="form-label">
+            <i class="fas fa-phone"></i> Phone Number <span class="required-field">*</span>
+          </label>
+          <input type="tel"
+                 id="phone"
+                 name="phone"
+                 class="form-input {% if form and form.phone.errors %}input-error{% endif %}"
+                 placeholder="+256700000000"
+                 required
+                 autocomplete="tel"
+                 inputmode="tel"
+                 value="{{ form.phone.data if form and form.phone.data else '' }}"
+                 aria-label="Phone number in E.164 format"
+                 aria-describedby="phoneFeedback"
+                 data-validation="phone"
+                 pattern="^[\+][0-9]{10,15}$|^[0-9]{10,15}$"
+                 title="Enter your phone number (e.g. +256700000000 or 0700000000)">
+          <div class="input-effects"><div class="input-focus-line"></div></div>
+          {% if form and form.phone.errors %}
+            <ul class="form-errors" id="phoneFeedback" role="alert">
+              {% for err in form.phone.errors %}<li>{{ err }}</li>{% endfor %}
+            </ul>
+          {% else %}
+            <div class="input-feedback" id="phoneFeedback">
+              <small><i class="fas fa-info-circle"></i> Phone number only — a code will be sent via SMS</small>
+            </div>
+          {% endif %}
+        </div>
+      {% endif %}
+
+      {# Step 2 — OTP entry (only after session_id is returned) #}
+      {% if session_id %}
+        <div class="form-group" id="tokenGroup">
+          <label for="token" class="form-label">
+            <i class="fas fa-keyboard"></i> Verification Code
+          </label>
+          <input type="text"
+                 id="token"
+                 name="token"
+                 class="form-input token-input"
+                 placeholder="000000"
+                 required
+                 inputmode="numeric"
+                 pattern="\d{6}"
+                 maxlength="6"
+                 autocomplete="one-time-code"
+                 aria-label="6-digit verification code"
+                 aria-describedby="tokenHint"
+                 data-validation="token">
+          <div class="input-effects"><div class="input-focus-line"></div></div>
+          <div class="token-hint" id="tokenHint">
+            Enter the 6-digit code sent to your phone.
+            You have <strong>3 attempts</strong> before this session is invalidated.
+          </div>
+        </div>
+      {% endif %}
+
+      <div class="form-actions">
+        {% if not session_id %}
+          <button type="submit" class="btn btn-primary" id="sendTokenBtn">
+            <span class="btn-content">
+              <i class="fas fa-paper-plane btn-icon"></i>
+              <span class="btn-text">Send Secure Token</span>
+            </span>
+            <div class="btn-shine"></div>
+          </button>
+        {% else %}
+          <button type="submit" class="btn btn-primary" id="verifyTokenBtn">
+            <span class="btn-content">
+              <i class="fas fa-check-circle btn-icon"></i>
+              <span class="btn-text">Verify &amp; Continue</span>
+            </span>
+            <div class="btn-shine"></div>
+          </button>
+          <button type="submit" formaction="{{ url_for('auth.token_resend') }}"
+                  class="btn btn-secondary" id="resendTokenBtn">
+            <span class="btn-content">
+              <i class="fas fa-redo btn-icon"></i>
+              <span class="btn-text">Resend Token</span>
+            </span>
+          </button>
+        {% endif %}
+      </div>
+    </form>
+    {% endif %}
+
+    <!-- Footer Links -->
+    <div class="footer-links">
+      <a href="#" class="footer-link" data-tooltip="Reset your password">
+        <i class="fas fa-key"></i>
+        <span>Forgot Password?</span>
+      </a>
+      <a href="#" class="footer-link" data-tooltip="Temporary guest access">
+        <i class="fas fa-user-friends"></i>
+        <span>Guest Access</span>
+      </a>
+      <a href="#" class="footer-link" id="offlineModeBtn" data-tooltip="Access offline features">
+        <i class="fas fa-wifi-slash"></i>
+        <span>Offline Mode</span>
+      </a>
+    </div>
+
+  </div>
+
+  <!-- Particle Background -->
+  <canvas id="particles-background"></canvas>
+
+  <!-- JavaScript -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+  <script src="{{ url_for('static', filename='js/login.js') }}"></script>
+  <script>
+    function dismissAlert(btn) {
+      const alert = btn.closest('.alert');
+      if (alert) {
+        alert.style.opacity = '0';
+        setTimeout(() => alert.remove(), 300);
+      }
+    }
+  </script>
+</body>
+</html>

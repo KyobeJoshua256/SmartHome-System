@@ -1,0 +1,309 @@
+{% extends "users/base.html" %}
+
+{% block title %}{{ user.username }}'s Dashboard {% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/userdashboard.css') }}">
+{% endblock %}
+
+{% block content %}
+
+{# ── Data islands for JS modules ── #}
+<script id="dashboard-data" type="application/json">
+{
+  "userId":    {{ user.id | tojson }},
+  "username":  {{ user.username | tojson }},
+  "userRole":  {{ user.role | tojson }},
+  "isAdmin":   {{ is_admin | tojson }},
+  "csrfToken": {{ csrf_token() | tojson }},
+  "chat": {{ chat | tojson }}
+}
+</script>
+
+{# ═══════════════════════ PAGE SHELL ═══════════════════════ #}
+<div class="db-shell">
+
+  {# ── SIDEBAR ── #}
+  <aside class="db-sidebar" id="dbSidebar">
+    <div class="sidebar-brand">
+      <div class="brand-mark">
+        <i class="fas fa-house-signal" aria-hidden="true"></i>
+      </div>
+      <span class="brand-name">EBS<em>Home</em></span>
+    </div>
+
+    <nav class="sidebar-nav" aria-label="Main navigation">
+      <a class="snav-item active" data-section="overview" href="#overview">
+        <i class="fas fa-chart-pie" aria-hidden="true"></i>
+        <span>Overview</span>
+      </a>
+      <a class="snav-item" data-section="devices" href="#devices">
+        <i class="fas fa-plug-circle-bolt" aria-hidden="true"></i>
+        <span>Devices</span>
+      </a>
+      <a class="snav-item" data-section="messages" href="#messages">
+        <i class="fas fa-comments" aria-hidden="true"></i>
+        <span>Messages</span>
+        {% if chat.total_unread > 0 %}
+        <span class="nav-badge" id="navUnreadBadge" aria-label="{{ chat.total_unread }} unread messages">
+          {{ chat.total_unread if chat.total_unread < 100 else '99+' }}
+        </span>
+        {% else %}
+        <span class="nav-badge" id="navUnreadBadge" hidden>0</span>
+        {% endif %}
+      </a>
+      <a class="snav-item" data-section="automations" href="#automations">
+        <i class="fas fa-robot" aria-hidden="true"></i>
+        <span>Automations</span>
+      </a>
+      {% if is_admin %}
+      <a class="snav-item" href="{{ url_for('admin.index') }}">
+        <i class="fas fa-shield-halved" aria-hidden="true"></i>
+        <span>Administrator</span>
+      </a>
+      {% endif %}
+    </nav>
+
+    <div class="sidebar-foot">
+      <div class="sys-dot-row" id="sysStatusRow">
+        <span class="sys-dot" id="sysDot" aria-hidden="true"></span>
+        <span id="sysLabel">System Online</span>
+      </div>
+      <a class="snav-item snav-item--danger" href="{{ url_for('auth.logout') }}">
+        <i class="fas fa-right-from-bracket" aria-hidden="true"></i>
+        <span>Logout</span>
+      </a>
+    </div>
+  </aside>
+
+  {# ── TOPBAR ── #}
+  <header class="db-topbar" id="dbTopbar">
+    <button class="topbar-burger" id="sidebarToggle" aria-label="Toggle sidebar" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
+
+    <div class="topbar-greet">
+      Good <span id="greetWord">day</span>,&nbsp;<strong>{{ user.username }}</strong>
+    </div>
+
+    <div class="topbar-right">
+      <div class="topbar-clock" aria-label="Current time">
+        <i class="fas fa-clock" aria-hidden="true"></i>
+        <div class="topbar-clock-body">
+          <time id="topbarClock">{{ now.strftime('%H:%M:%S') if now else '--:--:--' }}</time>
+          <span id="topbarDate">{{ now.strftime('%A, %d %B %Y') if now else '' }}</span>
+        </div>
+      </div>
+
+      <button class="topbar-icon-btn" id="alertBell" title="Alerts" aria-label="View alerts">
+        <i class="fas fa-bell" aria-hidden="true"></i>
+      </button>
+
+      <div class="topbar-user" id="topbarUser">
+        {% if user.avatar_url %}
+          <img src="{{ user.avatar_url }}" class="u-avatar" alt="{{ user.username }}">
+        {% else %}
+          <div class="u-avatar u-avatar--init" aria-hidden="true">{{ user.username[0] | title }}</div>
+        {% endif %}
+        <div class="u-meta">
+          <span class="u-name">{{ user.username }}</span>
+          <span class="u-role role-{{ user.role.value }}">{{ user.role | title }}</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  {# ── MAIN ── #}
+  <main class="db-main" id="dbMain">
+
+    {# ─── OVERVIEW ─── #}
+    <section class="db-section is-active" id="section-overview">
+
+      <div class="stat-grid">
+        <div class="stat-card sc--blue">
+          <div class="sc-icon"><i class="fas fa-plug-circle-bolt" aria-hidden="true"></i></div>
+          <div class="sc-body">
+            <div class="sc-val" id="statDevicesOn">0</div>
+            <div class="sc-lbl">Devices On</div>
+          </div>
+        </div>
+
+        <div class="stat-card sc--teal">
+          <div class="sc-icon"><i class="fas fa-house" aria-hidden="true"></i></div>
+          <div class="sc-body">
+            <div class="sc-lbl">Rooms</div>
+          </div>
+        </div>
+
+        <div class="stat-card sc--amber">
+          <div class="sc-icon"><i class="fas fa-bolt" aria-hidden="true"></i></div>
+          <div class="sc-body">
+            <div class="sc-lbl">Power Draw</div>
+          </div>
+        </div>
+
+        <div class="stat-card sc--purple">
+          <div class="sc-icon"><i class="fas fa-comments" aria-hidden="true"></i></div>
+          <div class="sc-body">
+            <div class="sc-val" id="statUnread">{{ chat.total_unread }}</div>
+            <div class="sc-lbl">Unread</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-hd">
+        <h2><i class="fas fa-house-signal" aria-hidden="true"></i> Your Rooms</h2>
+        <button class="hd-link" data-goto="devices">
+          All Devices <i class="fas fa-arrow-right" aria-hidden="true"></i>
+        </button>
+      </div>
+      <div class="room-grid" id="overviewRooms">
+        {# Rooms will be populated by devices.js #}
+      </div>
+    </section>
+
+    {# ─── DEVICES ─── #}
+    <section class="db-section" id="section-devices">
+      <div class="section-hd">
+        <h2><i class="fas fa-plug-circle-bolt" aria-hidden="true"></i> Devices</h2>
+        <div class="hd-controls">
+          <input type="search" class="search-inp" id="deviceSearch"
+                 placeholder="Search…" aria-label="Search devices">
+          <select class="filter-sel" id="deviceTypeFilter" aria-label="Filter by type">
+            <option value="">All Types</option>
+            <option value="light">Lights</option>
+            <option value="socket">Sockets</option>
+            <option value="fan">Fans</option>
+            <option value="heater">Heaters</option>
+            <option value="lock">Locks</option>
+            <option value="sensor">Sensors</option>
+            <option value="camera">Cameras</option>
+            <option value="cooker">Cookers</option>
+            <option value="others">Others</option>
+          </select>
+        </div>
+      </div>
+      <div id="devicesContainer">
+        <div class="loading-spin">
+          <i class="fas fa-spinner fa-spin" aria-hidden="true"></i> Loading…
+        </div>
+      </div>
+    </section>
+
+    {# ─── MESSAGES ─── #}
+    <section class="db-section" id="section-messages">
+      <div class="chat-shell">
+
+        <aside class="chat-sidebar" id="chatSidebar" aria-label="Conversations">
+          <div class="chat-sb-hd">
+            <h3>Messages</h3>
+            <button class="icon-btn" id="newConvBtn" title="New conversation" aria-label="New conversation">
+              <i class="fas fa-pen-to-square" aria-hidden="true"></i>
+            </button>
+          </div>
+          <input type="search" class="search-inp" id="convSearch"
+                 placeholder="Search…" aria-label="Search conversations">
+          <div class="conv-list" id="convList" role="list">
+            {# Seeded server-side so the list is visible before JS runs #}
+            {% for conv in chat.conversations %}
+            <div class="conv-item {% if conv.unread_count %}conv-item--unread{% endif %}"
+                 data-conv-id="{{ conv.conversation_id }}"
+                 data-conv-type="{{ conv.conversation_type }}"
+                 role="listitem"
+                 tabindex="0"
+                 aria-label="{{ conv.display_name }}{% if conv.unread_count %}, {{ conv.unread_count }} unread{% endif %}">
+              <div class="conv-av" aria-hidden="true">{{ conv.avatar_initial }}</div>
+              <div class="conv-info">
+                <div class="conv-name">{{ conv.display_name }}</div>
+                <div class="conv-preview">{{ conv.last_message or 'No messages yet' }}</div>
+              </div>
+              <div class="conv-meta">
+                <span class="conv-time">{{ conv.last_message_time }}</span>
+                {% if conv.unread_count %}
+                <span class="conv-badge" aria-label="{{ conv.unread_count }} unread">
+                  {{ conv.unread_count if conv.unread_count < 100 else '99+' }}
+                </span>
+                {% endif %}
+                {% if conv.is_muted %}
+                <i class="fas fa-bell-slash conv-muted" aria-label="Muted" title="Muted"></i>
+                {% endif %}
+              </div>
+            </div>
+            {% else %}
+            <div class="conv-empty" id="convEmpty">
+              <i class="fas fa-comments" aria-hidden="true"></i>
+              <p>No conversations yet</p>
+            </div>
+            {% endfor %}
+          </div>
+        </aside>
+
+        <div class="chat-panel" id="chatPanel">
+          <div class="chat-empty" id="chatEmpty">
+            <i class="fas fa-comments" aria-hidden="true"></i>
+            <p>Select a conversation to start chatting</p>
+          </div>
+
+          <div class="chat-view" id="chatView" hidden>
+            <div class="chat-view-hd" id="chatViewHd">
+              <button class="icon-btn chat-back" id="chatBackBtn" aria-label="Back to conversations">
+                <i class="fas fa-arrow-left" aria-hidden="true"></i>
+              </button>
+              <div class="chat-av-sm" id="chatHdAvatar" aria-hidden="true"></div>
+              <div class="chat-hd-info">
+                <div class="chat-hd-name" id="chatHdName">—</div>
+                <div class="chat-hd-sub" id="chatHdSub"></div>
+              </div>
+            </div>
+            <div class="chat-msgs" id="chatMsgs" role="log" aria-live="polite" aria-label="Messages"></div>
+            <form class="chat-compose" id="chatCompose" autocomplete="off">
+              <textarea class="chat-inp" id="chatInput" rows="1"
+                        placeholder="Type a message…" maxlength="10000"
+                        aria-label="Message input"></textarea>
+              <button type="submit" class="send-btn" id="sendBtn" aria-label="Send message">
+                <i class="fas fa-paper-plane" aria-hidden="true"></i>
+              </button>
+            </form>
+          </div>
+        </div>
+
+      </div>
+
+      {# New conversation modal #}
+      <div class="modal-backdrop" id="newConvModal" hidden role="dialog" aria-modal="true" aria-labelledby="newConvTitle">
+        <div class="modal-box">
+          <div class="modal-hd">
+            <h3 id="newConvTitle">New Conversation</h3>
+            <button class="icon-btn" id="closeNewConv" aria-label="Close">
+              <i class="fas fa-times" aria-hidden="true"></i>
+            </button>
+          </div>
+          <div class="modal-body">
+            <input type="search" class="search-inp full-w" id="userSearch"
+                   placeholder="Search by username or phone…" aria-label="Search users">
+            <div class="user-results" id="userResults" role="list"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    {# ─── AUTOMATIONS ─── #}
+    <section class="db-section" id="section-automations">
+      <div class="section-hd">
+        <h2><i class="fas fa-robot" aria-hidden="true"></i> Automations &amp; Reminders</h2>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<div class="sidebar-veil" id="sidebarVeil" aria-hidden="true"></div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<script src="{{ url_for('static', filename='js/UserDevices.js') }}"></script>
+<script src="{{ url_for('static', filename='js/UserMessaging.js') }}"></script>
+<script src="{{ url_for('static', filename='js/userdashboard.js') }}"></script>
+{% endblock %}

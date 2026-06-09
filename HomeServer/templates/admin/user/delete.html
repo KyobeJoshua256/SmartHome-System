@@ -1,0 +1,17 @@
+{% extends 'admin/model/delete.html' %}
+
+{% block body %}
+  {{ super() }}
+  <div class="alert alert-danger mt-3">
+    <strong>This is a permanent, hard delete.</strong>
+    Type <code>{{ model.username }}</code> below to confirm.
+  </div>
+  <div class="form-group">
+    <input type="text"
+           name="delete_confirm"
+           class="form-control"
+           placeholder="Type username to confirm"
+           autocomplete="off"
+           required>
+  </div>
+{% endblock %}

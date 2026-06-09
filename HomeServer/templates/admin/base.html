@@ -1,0 +1,307 @@
+{% import 'admin/layout.html'  as layout       with context %}
+{% import 'admin/static.html'  as admin_static  with context %}
+{% import 'admin/lib.html'     as lib           with context %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    {# ── head_meta: Flask-Admin writes charset/viewport here ─────────────── #}
+    {% block head_meta %}
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <meta name="robots" content="noindex, nofollow">
+    {% endblock head_meta %}
+
+    <title>{% block title %}
+        {% if admin_view is defined and admin_view.category %}{{ admin_view.category }} – {% endif %}
+        {% if admin_view is defined %}{{ admin_view.name }}{% else %}Admin{% endif %}
+        | EBS SmartHome
+    {% endblock title %}</title>
+
+    {# ── head_css: Flask-Admin injects its own CSS here via super() ───────── #}
+    {% block head_css %}
+    {# Flask-Admin vendor CSS (select2, datepicker, etc.) — loaded silently #}
+    <link href="{{ admin_static.url(filename='admin/css/bootstrap4/admin.css', v='1.1.1') }}"
+          rel="stylesheet">
+    {# Font Awesome 6 (overrides FA4 bundled by Flask-Admin) #}
+    <link rel="stylesheet"
+          href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/crudAdmin.css') }}">
+    {# Your design system #}
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='css/baseAdmin.css') }}">
+    {# Per-view extra CSS (set extra_css on ModelView subclasses) #}
+    {% if admin_view is defined and admin_view.extra_css %}
+        {% for css_url in admin_view.extra_css %}
+        <link href="{{ css_url }}" rel="stylesheet">
+        {% endfor %}
+    {% endif %}
+    {% endblock head_css %}
+
+    {# ── head: model/list.html calls super() here for form_css() ─────────── #}
+    {% block head %}{% endblock %}
+    {# ── head_tail: additional head content from child templates ─────────── #}
+    {% block head_tail %}{% endblock %}
+
+    <style>
+        /* Flask-Admin bulk-action checkboxes must never be hidden */
+        .action-checkbox-column,
+        .action-checkbox,
+        input.action-checkbox {
+            display: table-cell !important;
+            visibility: visible !important;
+        }
+        /* ── CRUD content lives inside .content-wrapper ───────────────────── */
+        /* Scope Flask-Admin's Bootstrap4 table/form styles under our wrapper */
+        .content-wrapper .table          { color: var(--text-primary); }
+        .content-wrapper .table thead th { border-bottom-color: var(--border); color: var(--text-muted); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+        .content-wrapper .table td,
+        .content-wrapper .table th       { border-color: var(--border); vertical-align: middle; }
+        .content-wrapper .table-hover tbody tr:hover { background: rgba(255,255,255,.03); }
+        .content-wrapper .table-bordered { border-color: var(--border); }
+
+        /* Nav tabs (List / Create / Export …) */
+        .content-wrapper .nav-tabs       { border-bottom: 1px solid var(--border); margin-bottom: 20px; }
+        .content-wrapper .nav-tabs .nav-link { color: var(--text-muted); border: none; padding: 8px 16px; font-size: 13px; border-radius: var(--radius-sm) var(--radius-sm) 0 0; }
+        .content-wrapper .nav-tabs .nav-link.active,
+        .content-wrapper .nav-tabs .nav-item.show .nav-link { color: var(--accent); background: var(--accent-dim); border-bottom: 2px solid var(--accent); }
+        .content-wrapper .nav-tabs .nav-link:hover { color: var(--text-primary); background: rgba(255,255,255,.03); }
+
+        /* Forms */
+        .content-wrapper .form-control   { background: var(--bg-elevated); border-color: var(--border); color: var(--text-primary); border-radius: var(--radius-sm); }
+        .content-wrapper .form-control:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); background: var(--bg-elevated); color: var(--text-primary); }
+        .content-wrapper label           { color: var(--text-secondary); font-size: 13px; font-weight: 500; }
+        .content-wrapper .help-block,
+        .content-wrapper .form-text      { color: var(--text-muted); font-size: 12px; }
+
+        /* Buttons */
+        .content-wrapper .btn-primary    { background: var(--accent); border-color: var(--accent); color: #05070a; font-weight: 600; }
+        .content-wrapper .btn-primary:hover { filter: brightness(1.12); }
+        .content-wrapper .btn-danger     { background: var(--rose); border-color: var(--rose); color: #05070a; font-weight: 600; }
+        .content-wrapper .btn-default,
+        .content-wrapper .btn-secondary  { background: var(--bg-elevated); border-color: var(--border); color: var(--text-primary); }
+        .content-wrapper .btn-default:hover,
+        .content-wrapper .btn-secondary:hover { border-color: var(--border-hover); color: var(--text-primary); background: rgba(255,255,255,.04); }
+        .content-wrapper .btn-sm         { font-size: 12px; padding: 3px 10px; }
+
+        /* Pagination */
+        .content-wrapper .pagination .page-link { background: var(--bg-elevated); border-color: var(--border); color: var(--text-secondary); }
+        .content-wrapper .pagination .page-item.active .page-link { background: var(--accent); border-color: var(--accent); color: #05070a; }
+        .content-wrapper .pagination .page-link:hover { background: var(--accent-dim); color: var(--accent); }
+
+        /* Alerts / validation */
+        .content-wrapper .alert-danger   { background: var(--rose-dim); border-color: rgba(251,113,133,.25); color: var(--rose); }
+        .content-wrapper .alert-success  { background: var(--emerald-dim); border-color: rgba(52,211,153,.25); color: var(--emerald); }
+        .content-wrapper .alert-info     { background: var(--accent-dim); border-color: rgba(56,189,248,.25); color: var(--accent); }
+        .content-wrapper .alert-warning  { background: var(--amber-dim); border-color: rgba(251,191,36,.25); color: var(--amber); }
+
+        /* Select2 dark theme */
+        .select2-container--default .select2-selection--single,
+        .select2-container--default .select2-selection--multiple { background: var(--bg-elevated) !important; border-color: var(--border) !important; color: var(--text-primary) !important; }
+        .select2-dropdown { background: var(--bg-elevated); border-color: var(--border); }
+        .select2-container--default .select2-results__option { color: var(--text-primary); }
+        .select2-container--default .select2-results__option--highlighted { background: var(--accent-dim) !important; color: var(--accent) !important; }
+        .select2-container--default .select2-selection__rendered { color: var(--text-primary) !important; }
+
+        /* Inline CRUD table wrapper card */
+        .content-wrapper .card,
+        .content-wrapper .panel         { background: var(--bg-elevated); border-color: var(--border); border-radius: var(--radius-md); }
+        .content-wrapper .card-header,
+        .content-wrapper .panel-heading { background: transparent; border-bottom-color: var(--border); color: var(--text-primary); }
+    </style>
+
+    {% block head_css_extra %}{% endblock %}
+</head>
+<body>
+
+{# ============================================================================
+   page_body — Flask-Admin children can override this whole block.
+   We put our entire sidebar + main layout here and expose `body` inside it.
+   ============================================================================ #}
+{% block page_body %}
+<div class="app-layout">
+
+    {# ── SIDEBAR ─────────────────────────────────────────────────────────── #}
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="logo-group">
+                <div class="logo-icon"><i class="fas fa-bolt"></i></div>
+                <div class="logo-text">
+                    <span class="logo-main">EBS SmartHome</span>
+                    <span class="logo-sub">Electro-Bot Society v3.0</span>
+                </div>
+            </div>
+        </div>
+
+        {# ── nav-menu block: child templates can append items ──────────── #}
+        {% block navmenu %}
+        <nav class="nav-menu">
+
+            <a href="{{ url_for('admin.index') }}"
+               class="nav-item {% if request.endpoint == 'admin.index' %}active{% endif %}">
+                <i class="fas fa-th-large"></i><span>Dashboard</span>
+            </a>
+
+            {# ── Identity & Access ──────────────────────────────────────── #}
+            <div class="nav-divider"></div>
+            <div class="nav-label">Identity &amp; Access</div>
+
+            <a href="{{ url_for('user.index_view') }}"
+               class="nav-item {% if request.endpoint and request.endpoint.startswith('user.') %}active{% endif %}">
+                <i class="fas fa-users"></i><span>Users</span>
+            </a>
+            <a href="{{ url_for('otpsession.index_view') }}"
+               class="nav-item {% if request.endpoint and request.endpoint.startswith('otpsession.') %}active{% endif %}">
+                <i class="fas fa-shield-alt"></i><span>OTP Sessions</span>
+            </a>
+            {% block nav_identity %}{% endblock %}
+
+            {# ── Spaces & Zones ─────────────────────────────────────────── #}
+            <div class="nav-divider"></div>
+            <div class="nav-label">Spaces &amp; Zones</div>
+            {% block nav_spaces %}{% endblock %}
+
+            {# ── Hardware & IoT ─────────────────────────────────────────── #}
+            <div class="nav-divider"></div>
+            <div class="nav-label">Hardware &amp; IoT</div>
+            {% block nav_hardware %}{% endblock %}
+
+            {# ── System & Logs ──────────────────────────────────────────── #}
+            <div class="nav-divider"></div>
+            <div class="nav-label">System &amp; Logs</div>
+            {% block nav_system %}{% endblock %}
+
+            <div class="nav-divider"></div>
+            <a href="{{ url_for('main.dashboard') }}" class="nav-item">
+                <i class="fas fa-home"></i><span>User View</span>
+            </a>
+            <a href="{{ url_for('auth.logout') }}" class="nav-item text-danger">
+                <i class="fas fa-sign-out-alt"></i><span>Logout</span>
+            </a>
+
+        </nav>
+        {% endblock navmenu %}
+    </aside>
+
+    <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
+
+    {# ── MAIN CONTENT ─────────────────────────────────────────────────────── #}
+    <main class="main-content">
+
+        <header class="top-bar">
+            <div class="top-bar-left">
+                <button class="mobile-menu-btn" onclick="toggleSidebar()">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <div class="page-header">
+                    {# page_title block: Flask-Admin model views write view name here #}
+                    {% block page_title %}
+                    <h1>
+                        {% if admin_view is defined %}
+                            {{ admin_view.name }}
+                        {% else %}
+                            Dashboard
+                        {% endif %}
+                    </h1>
+                    {% endblock page_title %}
+                    <p>{% block page_subtitle %}
+                        {% if admin_view is defined and admin_view.category %}
+                            {{ admin_view.category }}
+                        {% else %}
+                            System overview and real-time telemetry
+                        {% endif %}
+                    {% endblock page_subtitle %}</p>
+                </div>
+            </div>
+            <div class="top-bar-right">
+                <div class="system-status">
+                    <span class="status-dot"></span>
+                    <span class="status-text">All Systems Nominal</span>
+                </div>
+                <div class="user-profile">
+                    <div class="user-avatar">
+                        {{ current_user.username[0]|upper if current_user.is_authenticated else 'A' }}
+                    </div>
+                    <div class="user-info">
+                        <div class="user-name">{{ current_user.username if current_user.is_authenticated else 'Admin' }}</div>
+                        <div class="user-role">Administrator</div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        {# messages block: Flask-Admin uses layout.messages() for its own flashes #}
+        {% block messages %}
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+            <div class="flash-container">
+                {% for category, message in messages %}
+                <div class="flash flash-{{ category }}">
+                    <i class="fas
+                        {% if category == 'success' %}fa-check-circle
+                        {% elif category in ('error','danger') %}fa-times-circle
+                        {% elif category == 'warning' %}fa-exclamation-triangle
+                        {% else %}fa-info-circle
+                        {% endif %}"></i>
+                    <span>{{ message }}</span>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        {% endwith %}
+        {% endblock messages %}
+
+        {# ── THE CONTENT SLOT — all CRUD views write into {% block body %} ── #}
+        <div class="content-wrapper">
+            {# store render context so Flask-Admin form_rules macros work #}
+            {% set render_ctx = h.resolve_ctx() if h is defined else none %}
+            {% block body %}{% endblock %}
+        </div>
+
+    </main>
+</div>
+{% endblock page_body %}
+
+{# ── GLOBAL SCRIPTS ──────────────────────────────────────────────────────── #}
+{# tail_js: Flask-Admin injects jQuery, Select2, moment, etc. here          #}
+{% block tail_js %}
+{# Flask-Admin vendor JS (required for CRUD forms, select2, datepicker) #}
+<script src="{{ admin_static.url(filename='vendor/jquery.min.js', v='3.5.1') }}"></script>
+<script src="{{ admin_static.url(filename='bootstrap/bootstrap4/js/popper.min.js') }}"></script>
+<script src="{{ admin_static.url(filename='bootstrap/bootstrap4/js/bootstrap.min.js', v='4.6.2') }}"></script>
+<script src="{{ admin_static.url(filename='vendor/moment.min.js', v='2.9.4') }}"></script>
+<script src="{{ admin_static.url(filename='vendor/select2/select2.min.js', v='4.2.1') }}"></script>
+<script src="{{ admin_static.url(filename='admin/js/helpers.js', v='1.0.0') }}"></script>
+{% if admin_view is defined and admin_view.extra_js %}
+    {% for js_url in admin_view.extra_js %}
+    <script src="{{ js_url }}"></script>
+    {% endfor %}
+{% endif %}
+{% endblock tail_js %}
+
+{# tail: edit/create/list templates call super() here — keep it open #}
+{% block tail %}{% endblock %}
+
+<script>
+    function toggleSidebar() {
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('sidebarOverlay');
+        const isOpen  = sidebar.classList.toggle('open');
+        overlay.classList.toggle('active', isOpen);
+        document.body.style.overflow = isOpen ? 'hidden' : '';
+    }
+    function closeSidebar() {
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('sidebarOverlay');
+        sidebar.classList.remove('open');
+        overlay.classList.remove('active');
+        document.body.style.overflow = '';
+    }
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSidebar(); });
+</script>
+<script src="{{ url_for('static', filename='js/baseAdmin.js') }}"></script>
+{% block tail_js_extra %}{% endblock %}
+
+</body>
+</html>
