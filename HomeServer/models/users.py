@@ -51,10 +51,6 @@ class UserRole(PyEnum):
 # =============================================================================
 
 class User(UserMixin, database.Model):
-    """
-    Core user model supporting Password and OTP authentication.
-    Optimized for low-power ARM hardware (Pi Zero 2W).
-    """
     __tablename__ = 'users'
 
     id = Column(Integer, primary_key=True)
@@ -71,7 +67,7 @@ class User(UserMixin, database.Model):
     phone_verified = Column(Boolean, default=True, nullable=False)
     
     # Account Status
-    is_active = Column(Boolean, default=True, nullable=False, index=True)
+    is_active = Column(Boolean, default=False, nullable=False, index=True)
     is_deleted = Column(Boolean, default=False, nullable=False, index=True)
     is_locked = Column(Boolean, default=False, nullable=False, index=True)
     failed_login_attempts = Column(Integer, default=0, nullable=False)
@@ -102,7 +98,20 @@ class User(UserMixin, database.Model):
     created_at = Column(DateTime, default=now_utc, nullable=False)
     updated_at = Column(DateTime, default=now_utc, onupdate=now_utc, nullable=False)
 
-    #Relationships
+    # Relationships
+    room_memberships = relationship(
+        "RoomMember",
+        back_populates="user",
+        foreign_keys="RoomMember.user_id",
+        lazy="dynamic",
+    )
+    guest_rooms = relationship(
+        "GuestRoom",
+        back_populates="guest",
+        foreign_keys="GuestRoom.guest_id",
+        lazy="dynamic",
+    )
+
     conversations = relationship(
         "ConversationParticipant",
          back_populates="user",
@@ -173,13 +182,9 @@ class User(UserMixin, database.Model):
         digits = self.phone.lstrip('+')
         
         if format_type == 'international' and len(digits) == 12:
-            # +256 706 992 657
             return f"+{digits[:3]} {digits[3:6]} {digits[6:9]} {digits[9:12]}"
         elif format_type == 'local' and len(digits) == 12:
-            # 0706 992 657
             return f"0{digits[3:6]} {digits[6:9]} {digits[9:12]}"
-        
-        # Default: return as-is
         return self.phone
 
     # ========================================================================
@@ -244,9 +249,7 @@ class User(UserMixin, database.Model):
             if hours_since_last >= 1:
                 # Reset the counter - hour window has passed
                 self.otp_request_count = 0
-                # Don't commit here - let the calling function handle it
-        
-        # Now check if over limit
+
         if self.otp_request_count >= self.max_otp_requests_per_hour:
             # Calculate when the oldest request expires
             if self.last_otp_request:
