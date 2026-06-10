@@ -256,6 +256,15 @@
               </div>
             </div>
             <div class="chat-msgs" id="chatMsgs" role="log" aria-live="polite" aria-label="Messages"></div>
+            {# ── TYPING INDICATOR ── #}
+            <div class="chat-typing" id="typingIndicator" style="display: none;">
+                <div class="typing-dots">
+                    <span></span><span></span><span></span>
+                </div>
+                <span class="typing-name" id="typingText">Someone is typing</span>
+            </div>
+
+            <form class="chat-compose" id="chatCompose" autocomplete="off">
             <form class="chat-compose" id="chatCompose" autocomplete="off">
               <textarea class="chat-inp" id="chatInput" rows="1"
                         placeholder="Type a message…" maxlength="10000"

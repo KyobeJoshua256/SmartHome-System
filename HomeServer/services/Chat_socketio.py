@@ -108,3 +108,37 @@ def message_socket_events(socketio):
         conv_id = data.get('conversation_id')
         if conv_id:
             leave_room(f'conv_{conv_id}')
+
+    # ── Typing indicators ─────────────────────────────────────────────────────
+
+    @socketio.on('typing_start')
+    def on_typing_start(data):
+        """Broadcast that the current user has started typing."""
+        if not current_user.is_authenticated:
+            return
+        conv_id = data.get('conversation_id')
+        if not conv_id:
+            return
+            
+        emit('user_typing', {
+            'conversation_id': conv_id,
+            'user_id':         current_user.id,
+            'username':        current_user.username,
+            'is_typing':       True
+        }, room=f'conv_{conv_id}', include_self=False)
+
+    @socketio.on('typing_stop')
+    def on_typing_stop(data):
+        """Broadcast that the current user has stopped typing."""
+        if not current_user.is_authenticated:
+            return
+        conv_id = data.get('conversation_id')
+        if not conv_id:
+            return
+            
+        emit('user_typing', {
+            'conversation_id': conv_id,
+            'user_id':         current_user.id,
+            'username':        current_user.username,
+            'is_typing':       False
+        }, room=f'conv_{conv_id}', include_self=False)

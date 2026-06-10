@@ -12,10 +12,16 @@ let _avatarColors   = {};
 let _scrollObserver = null;
 let _typingTimer    = null;
 
+// Typing indicator state
+let _typingTimeout = null;
+let _isTyping = false;
+let _typingDisplayTimeout = null;
+let _lastTypingEmit = 0;
+
 // API base path
 const API_BASE = '/chat';
 
-// ── DOM references (populated by _cacheDOM) ────────────────────────────────
+// ── DOM references ─────────────────────────────────────────────────────────
 let convList, convSearch, chatEmpty, chatView,
     chatMsgs, chatInput, chatCompose, sendBtn,
     chatHdAvatar, chatHdName, chatHdSub,
@@ -63,10 +69,6 @@ function init(dashData) {
   _warmCsrf();
 }
 
-/**
- * NEW: Public method to close the active conversation.
- * Called by userdashboard.js when the user switches to a different section.
- */
 function leaveActiveConversation() {
   _closeActiveConv();
 }
@@ -138,8 +140,24 @@ function _renderConvList(convs, filter = '') {
 // ── Open / load conversation ───────────────────────────────────────────────
 async function _openConv(convId) {
   _active = convId;
+
+  // ── FIX: Push history state for mobile hardware back button ──
+  // This creates a history entry so the physical back button triggers 'popstate'
+  if (!history.state || !history.state.chatOpen) {
+      history.pushState({ chatOpen: true, convId: convId }, '');
+  } else {
+      history.replaceState({ chatOpen: true, convId: convId }, '');
+  }
+
   const conv = _conversations.find(c => c.conversation_id === convId);
   if (!conv) return;
+
+  // Clear typing state from previous chat
+  _isTyping = false;
+  clearTimeout(_typingTimeout);
+  const indicator = document.getElementById('typingIndicator');
+  if (indicator) indicator.style.display = 'none';
+  clearTimeout(_typingDisplayTimeout);
 
   convList?.querySelectorAll('.conv-item').forEach(el => {
     el.classList.toggle('active', parseInt(el.dataset.convId, 10) === convId);
@@ -355,6 +373,29 @@ function _initSocket() {
     }
   });
 
+  // ── TYPING INDICATOR LISTENER ───────────────────────────────────────────
+  _socket.on('user_typing', data => {
+    if (data.conversation_id !== _active) return;
+    if (data.user_id === _userId) return; // Ignore own events
+
+    const indicator = document.getElementById('typingIndicator');
+    const textEl = document.getElementById('typingText');
+    if (!indicator || !textEl) return;
+
+    if (data.is_typing) {
+      textEl.textContent = `${data.username} is typing...`;
+      indicator.style.display = 'flex';
+      
+      clearTimeout(_typingDisplayTimeout);
+      _typingDisplayTimeout = setTimeout(() => {
+        indicator.style.display = 'none';
+      }, 4000);
+    } else {
+      indicator.style.display = 'none';
+      clearTimeout(_typingDisplayTimeout);
+    }
+  });
+
   _socket.on('message_read_receipt', data => {
     const { message_id, conversation_id, read_count, status } = data;
     if (conversation_id !== _active) return;
@@ -383,17 +424,50 @@ function _initSocket() {
   });
 }
 
+// ── Typing Logic ───────────────────────────────────────────────────────────
+function _handleTyping() {
+  if (!_active || !_socket?.connected) return;
+  const now = Date.now();
+
+  if (!_isTyping) {
+    _isTyping = true;
+    _socket.emit('typing_start', { conversation_id: _active });
+    _lastTypingEmit = now;
+  } else if (now - _lastTypingEmit > 2000) {
+    _socket.emit('typing_start', { conversation_id: _active });
+    _lastTypingEmit = now;
+  }
+
+  clearTimeout(_typingTimeout);
+  _typingTimeout = setTimeout(() => {
+    if (_isTyping) {
+      _isTyping = false;
+      _socket.emit('typing_stop', { conversation_id: _active });
+    }
+  }, 3000); 
+}
+
 // ── Event binding ──────────────────────────────────────────────────────────
-/**
- * NEW: Centralized function to close the active chat view and clear state.
- */
 function _closeActiveConv() {
+  if (_isTyping) {
+    _isTyping = false;
+    if (_socket?.connected) {
+      _socket.emit('typing_stop', { conversation_id: _active });
+    }
+  }
+  clearTimeout(_typingTimeout);
+
   if (_active && _socket?.connected) {
     _socket.emit('leave_conversation', { conversation_id: _active });
   }
   if (chatView)  chatView.hidden  = true;
   if (chatEmpty) chatEmpty.hidden = false;
   chatSidebar?.closest('.chat-shell')?.classList.remove('conv-open');
+  
+  const indicator = document.getElementById('typingIndicator');
+  if (indicator) indicator.style.display = 'none';
+  clearTimeout(_typingDisplayTimeout);
+
   _active = null;
 }
 
@@ -403,6 +477,12 @@ function _bindEvents() {
       e.preventDefault();
       const content = (chatInput?.value || '').trim();
       if (!content || !_active) return;
+
+      clearTimeout(_typingTimeout);
+      if (_isTyping) {
+        _isTyping = false;
+        _socket.emit('typing_stop', { conversation_id: _active });
+      }
 
       if (sendBtn)   sendBtn.disabled = true;
       if (chatInput) chatInput.value  = '';
@@ -436,12 +516,21 @@ function _bindEvents() {
         chatCompose?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
       }
     });
-    chatInput.addEventListener('input', _autoResize);
+    chatInput.addEventListener('input', () => {
+      _autoResize();
+      _handleTyping();
+    });
   }
 
   if (chatBackBtn) {
     chatBackBtn.addEventListener('click', () => {
-      _closeActiveConv(); // Uses the new centralized function
+      // FIX: Use history.back() to pop the state we pushed in _openConv.
+      // The popstate listener below will handle the actual closing logic.
+      if (history.state && history.state.chatOpen) {
+          history.back();
+      } else {
+          _closeActiveConv();
+      }
     });
   }
 
@@ -465,6 +554,15 @@ function _bindEvents() {
   });
 
   if (userSearch) userSearch.addEventListener('input', debounce(_searchUsers, 300));
+
+  // ── FIX: Hardware Back Button / Browser Swipe Listener ──
+  // Intercepts the physical back button on mobile (or swipe back on iOS/Safari)
+  window.addEventListener('popstate', () => {
+      // If a chat is currently open, it means the back button was pressed to exit it
+      if (_active !== null) {
+          _closeActiveConv();
+      }
+  });
 }
 
 // ── New conversation ───────────────────────────────────────────────────────
@@ -605,6 +703,5 @@ function showToast(type, message) {
 }
 
 // ── Exports ────────────────────────────────────────────────────────────────
-// FIX: Added leaveActiveConversation to the public API
 return { preload, init, initSocket, leaveActiveConversation, get initialized() { return _initialized; } };
 })();

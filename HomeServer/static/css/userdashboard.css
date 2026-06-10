@@ -818,7 +818,14 @@ body { font-family: 'DM Sans', system-ui, sans-serif; }
   padding: 12px 16px;
   border-bottom: 1px solid var(--card-border);
   flex-shrink: 0;
-  background: rgba(255, 255, 255, 0.60);
+  
+  /* FIX: Make it stick to the top like a native app */
+  background: rgba(244, 247, 255, 0.98); /* Solid background matching the panel */
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .chat-av-sm {
@@ -1003,32 +1010,48 @@ body { font-family: 'DM Sans', system-ui, sans-serif; }
 /* ═══════════════════════════════════════════════════════
    TYPING INDICATOR
    ═══════════════════════════════════════════════════════ */
-.msg-typing {
-  display: flex; align-items: center; gap: 8px;
-  padding: 6px 12px;
-  max-width: 75%;
-  align-self: flex-start;
-  font-size: 0.78rem;
-  color: var(--txt-muted);
-  font-style: italic;
+/* ── Typing Indicator Styles ── */
+.chat-typing {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 16px;
+    min-height: 28px;
+    font-size: 0.78rem; /* Small, subtle font as requested */
+    color: var(--txt-muted, #64748b); /* Uses your theme's muted text, falls back to a visible slate gray */
+    font-style: italic;
+    background: rgba(0, 0, 0, 0.02); /* Very subtle background so it doesn't blend into a white screen */
+    border-top: 1px solid rgba(0, 0, 0, 0.05);
 }
 
 .typing-dots {
-  display: inline-flex; align-items: center; gap: 3px;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
 }
+
 .typing-dots span {
-  width: 5px; height: 5px; border-radius: 50%;
-  background: rgba(37, 99, 235, 0.35);
-  animation: typingBounce 1.2s infinite ease-in-out;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #3b82f6; /* Solid bright blue - clearly visible on white/light backgrounds */
+    animation: typingBounce 1.2s infinite ease-in-out;
 }
-.typing-dots span:nth-child(2) { animation-delay: .2s; }
-.typing-dots span:nth-child(3) { animation-delay: .4s; }
 
+.typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+/* The smooth vertical bounce animation */
 @keyframes typingBounce {
-  0%, 80%, 100% { transform: translateY(0);    opacity: .4; }
-  40%            { transform: translateY(-4px); opacity: 1;  }
+    0%, 80%, 100% { 
+        transform: translateY(0); 
+        opacity: 0.4; 
+    }
+    40% { 
+        transform: translateY(-4px); 
+        opacity: 1; 
+    }
 }
-
 /* ═══════════════════════════════════════════════════════
    MODAL
    ═══════════════════════════════════════════════════════ */
@@ -1216,32 +1239,39 @@ body { font-family: 'DM Sans', system-ui, sans-serif; }
   .hd-controls { width: 100%; }
   .search-inp.full-w { width: 100%; }
 
-  #section-messages { height: calc(100svh - var(--topbar-h)); padding: 0; }
-
-  .chat-shell {
-    grid-template-columns: 1fr;
-    position: relative;
+  #section-messages { 
+    height: calc(100svh - var(--topbar-h)); 
+    padding: 0; 
+    overflow: hidden; 
   }
 
-  .chat-sidebar {
+ .chat-shell {
+    grid-template-columns: 1fr;
+    position: relative;
+    height: 100%; 
+  }
+ .chat-sidebar {
     width: 100%;
     border-right: none;
     display: flex;
   }
 
+ 
   .chat-panel {
     display: none;
     width: 100%;
     position: absolute; inset: 0; z-index: 10;
     background: rgba(244, 247, 255, 0.98);
     flex-direction: column;
+    overflow: hidden; /* Crucial: Prevents the panel itself from scrolling */
   }
+
 
   .chat-shell.conv-open .chat-sidebar { display: none; }
   .chat-shell.conv-open .chat-panel   { display: flex; }
 
   .chat-back { display: grid !important; }
-
+  
   .chat-compose {
     padding: 12px 14px;
     padding-bottom: max(12px, env(safe-area-inset-bottom));
