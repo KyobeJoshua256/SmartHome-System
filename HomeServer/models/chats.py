@@ -103,11 +103,8 @@ def _hmac_uid(user_id: int) -> str:
 class MessageType(PyEnum):
     """Supported message content types — chat only."""
     TEXT   = "text"
-    IMAGE  = "image"
-    VIDEO  = "video"
-    AUDIO  = "audio"  
-    FILE   = "file"
-    SYSTEM = "system"  
+    SYSTEM = "system"
+     
 
 
 class ConversationType(PyEnum):

@@ -118,16 +118,11 @@ class MessageForm(FlaskForm):
         render_kw={"rows": 2, "placeholder": "Type a message…"},
     )
 
-    # Aligned to MessageType enum: TEXT | IMAGE | VIDEO | AUDIO | FILE | SYSTEM
+    # Aligned to MessageType enum: TEXT 
     message_type = SelectField(
         'Message Type',
         choices=[
             (MessageType.TEXT.value,   'Text'),
-            (MessageType.IMAGE.value,  'Image'),
-            (MessageType.VIDEO.value,  'Video'),
-            (MessageType.AUDIO.value,  'Audio'),
-            (MessageType.FILE.value,   'File'),
-            (MessageType.SYSTEM.value, 'System'),
         ],
         default=MessageType.TEXT.value,
         validators=[Optional()],
@@ -197,11 +192,6 @@ class MessageSearchForm(FlaskForm):
         choices=[
             ('',                      'All Types'),
             (MessageType.TEXT.value,  'Text'),
-            (MessageType.IMAGE.value, 'Images'),
-            (MessageType.VIDEO.value, 'Videos'),
-            (MessageType.AUDIO.value, 'Audio'),
-            (MessageType.FILE.value,  'Files'),
-            (MessageType.SYSTEM.value,'System Messages'),
         ],
         validators=[Optional()],
     )
