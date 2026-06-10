@@ -26,7 +26,7 @@ import logging
 import re
 
 from flask import flash, redirect, request, url_for
-from flask_admin import Admin, AdminIndexView, expose
+from flask_admin import Admin, AdminIndexView, BaseView, expose
 from flask_admin.actions import action
 from flask_admin.contrib.sqla import ModelView
 from flask_admin.theme import Bootstrap4Theme
@@ -37,6 +37,15 @@ from wtforms import PasswordField, ValidationError
 from wtforms.validators import EqualTo, Length, Optional as OptionalValidator
 
 from HomeServer.models.users import OTPSession, User, UserRole, ensure_aware, now_utc
+from HomeServer.models.rooms import (
+    Room, RoomMember, GuestRoom,
+    RoomStatus, RoomType, RoomService,
+)
+from HomeServer.models.utils import KAMPALA_TZ
+from HomeServer.forms.rooms import (
+    RoomForm, RoomMemberForm, GuestRoomForm,
+    AllocateMemberForm, AllocateGuestForm, BulkRoomOperationForm,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -260,7 +269,12 @@ class UserAdmin(AuditMixin, AdminAccessMixin, ModelView):
     details_modal = True
     edit_modal = True
     page_size = 50
-    export_types = ["csv", "xlsx"]
+    export_types = [
+    "csv",
+    "xlsx",
+    "pdf",
+    "txt"
+        ]
     export_max_rows = 0
 
     # Sensitive / internal columns
@@ -360,7 +374,6 @@ class UserAdmin(AuditMixin, AdminAccessMixin, ModelView):
         'receive_push',
         'mute_notifications',
         'force_password_reset'
-        # Note: Password fields should be editable but can be left blank
     )
 
     # ------------------------------------------------------------------
@@ -1037,7 +1050,640 @@ class SecureAdminIndexView(AdminAccessMixin, AdminIndexView):
 
 
 # =============================================================================
-# 9. Factory
+# 9. Room Admin Views
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# 9a. RoomAdminView — CRUD for physical/logical rooms
+# ---------------------------------------------------------------------------
+
+class RoomAdminView(AuditMixin, AdminAccessMixin, ModelView):
+    """
+    CRUD view for Rooms.
+
+    When a room is created a corresponding VACANT RoomMember row is inserted
+    automatically so the room immediately appears in the vacant pool without
+    any extra admin action.
+    """
+
+    name = "Rooms"
+    model_icon = "fas fa-door-open"
+
+    can_view_details = True
+    can_export = True
+    can_create = True
+    can_edit = True
+    can_delete = True
+    details_modal = True
+    page_size = 50
+
+    column_list = ["id", "name", "room_type", "status", "created_at", "updated_at"]
+    column_labels = {
+        "id": "ID", "name": "Name", "room_type": "Type",
+        "status": "Status", "created_at": "Created", "updated_at": "Updated",
+    }
+    column_details_list = ["id", "name", "room_type", "status", "created_at", "updated_at"]
+    column_searchable_list = ["name"]
+    column_filters = ["room_type", "status"]
+    column_sortable_list = ["id", "name", "room_type", "status", "created_at"]
+
+    form = RoomForm
+    form_columns = ["name", "room_type", "status"]
+
+    def _fmt_dt(self, ctx, model, name):
+        return _fmt_dt(getattr(model, name, None))
+
+    def _fmt_room_type(self, ctx, model, name) -> Markup:
+        icons = {
+            "personal": ("fa-user", "primary"),
+            "shared": ("fa-users", "info"),
+            "guest": ("fa-user-clock", "warning"),
+        }
+        val = model.room_type.value
+        icon, color = icons.get(val, ("fa-door-open", "secondary"))
+        return Markup(
+            f'<span class="badge badge-{color}">'
+            f'<i class="fas {icon}"></i> {val.capitalize()}</span>'
+        )
+
+    def _fmt_room_status(self, ctx, model, name) -> Markup:
+        colors = {
+            "vacant": "secondary", "active": "success",
+            "inactive": "warning", "expired": "danger",
+        }
+        val = model.status.value
+        color = colors.get(val, "secondary")
+        return Markup(f'<span class="badge badge-{color}">{val.capitalize()}</span>')
+
+    column_formatters = {
+        "room_type": _fmt_room_type,
+        "status": _fmt_room_status,
+        "created_at": _fmt_dt,
+        "updated_at": _fmt_dt,
+    }
+    column_formatters_detail = column_formatters
+
+    def on_model_change(self, form, model, is_created: bool) -> None:
+        """
+        After creating a room, insert a matching VACANT RoomMember entry so
+        the room surfaces in the vacant pool immediately.
+        """
+        super().on_model_change(form, model, is_created)
+        if is_created:
+            # Flush to obtain model.id before creating the FK reference
+            self.session.flush()
+            vacant = RoomMember(
+                room_id=model.id,
+                user_id=None,
+                room_type=model.room_type,
+                status=RoomStatus.VACANT,
+                can_view=True,
+                can_control=True,
+                can_manage=False,
+            )
+            self.session.add(vacant)
+            logger.info(
+                "[AUDIT] Auto-created VACANT RoomMember for room id=%s name=%r by %s",
+                model.id, model.name, getattr(current_user, "username", "unknown"),
+            )
+
+    def render(self, template, **kwargs):
+        kwargs.setdefault("model_name", self.name)
+        kwargs.setdefault("model_icon", self.model_icon)
+        return super().render(template, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# 9b. RoomMemberAdminView — CRUD for member allocations
+# ---------------------------------------------------------------------------
+
+class RoomMemberAdminView(AuditMixin, AdminAccessMixin, ModelView):
+    """
+    CRUD view for RoomMember allocations.
+
+    Keeps status consistent with user assignment: a row with no user_id is
+    forced to VACANT; a row gaining a user_id is forced to ACTIVE.
+    Vacated_at is maintained automatically.
+    """
+
+    name = "Room Allocations"
+    model_icon = "fas fa-bed"
+
+    can_view_details = True
+    can_export = True
+    can_create = True
+    can_edit = True
+    can_delete = False   # Use release_room workflow instead of hard delete
+    details_modal = True
+    page_size = 50
+
+    column_list = [
+        "id", "room", "user", "room_type", "status",
+        "can_view", "can_control", "can_manage", "vacated_at", "created_at",
+    ]
+    column_labels = {
+        "id": "ID", "room": "Room", "user": "Member", "room_type": "Type",
+        "status": "Status", "can_view": "View", "can_control": "Control",
+        "can_manage": "Manage", "vacated_at": "Vacated", "created_at": "Allocated",
+    }
+    column_details_list = column_list + ["updated_at"]
+    column_searchable_list = ["room.name", "user.username"]
+    column_filters = ["room_type", "status", "can_view", "can_control", "can_manage"]
+    column_sortable_list = ["id", "room_type", "status", "created_at", "vacated_at"]
+
+    form = RoomMemberForm
+    form_columns = ["room_id", "user_id", "room_type", "status", "can_view", "can_control", "can_manage"]
+
+    def _fmt_bool_col(self, ctx, model, name) -> Markup:
+        return _fmt_bool(getattr(model, name, None))
+
+    def _fmt_dt_col(self, ctx, model, name):
+        return _fmt_dt(getattr(model, name, None))
+
+    def _fmt_status(self, ctx, model, name) -> Markup:
+        colors = {
+            "vacant": "secondary", "active": "success",
+            "inactive": "warning", "expired": "danger",
+        }
+        val = model.status.value
+        return Markup(
+            f'<span class="badge badge-{colors.get(val, "secondary")}">{val.capitalize()}</span>'
+        )
+
+    column_formatters = {
+        "can_view": _fmt_bool_col,
+        "can_control": _fmt_bool_col,
+        "can_manage": _fmt_bool_col,
+        "status": _fmt_status,
+        "vacated_at": _fmt_dt_col,
+        "created_at": _fmt_dt_col,
+    }
+    column_formatters_detail = column_formatters
+
+    def on_model_change(self, form, model, is_created: bool) -> None:
+        """
+        Coerce user_id = 0 (the '--- Vacant ---' sentinel) to None, then
+        keep status consistent with whether a user is assigned.
+        """
+        super().on_model_change(form, model, is_created)
+
+        # Sentinel from RoomMemberForm: 0 means "no user"
+        if model.user_id == 0:
+            model.user_id = None
+
+        now = datetime.now(tz=KAMPALA_TZ)
+
+        if model.user_id is None:
+            # Room is being released back to the vacant pool
+            if model.status == RoomStatus.ACTIVE:
+                model.status = RoomStatus.VACANT
+            if model.vacated_at is None:
+                model.vacated_at = now
+        else:
+            # Room is being assigned to a member
+            if model.status in (RoomStatus.VACANT, RoomStatus.INACTIVE):
+                model.status = RoomStatus.ACTIVE
+                model.vacated_at = None
+
+    def render(self, template, **kwargs):
+        kwargs.setdefault("model_name", self.name)
+        kwargs.setdefault("model_icon", self.model_icon)
+        return super().render(template, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# 9c. GuestRoomAdminView — CRUD for time-bounded guest allocations
+# ---------------------------------------------------------------------------
+
+class GuestRoomAdminView(AuditMixin, AdminAccessMixin, ModelView):
+    """
+    CRUD view for GuestRoom allocations.
+
+    Converts valid_days from comma-string (form input) to a JSON list
+    (model column) on save, and back on load.  The model's @validates
+    decorator enforces the day-name whitelist so we don't duplicate that
+    logic here.
+    """
+
+    name = "Guest Allocations"
+    model_icon = "fas fa-user-clock"
+
+    can_view_details = True
+    can_export = True
+    can_create = True
+    can_edit = True
+    can_delete = False   # Expire via Dashboard instead of hard delete
+    details_modal = True
+    page_size = 50
+
+    column_list = [
+        "id", "room", "guest", "invited_by_id", "status",
+        "expires_at", "can_view", "can_control", "created_at",
+    ]
+    column_labels = {
+        "id": "ID", "room": "Room", "guest": "Guest", "invited_by_id": "Invited By",
+        "status": "Status", "expires_at": "Expires", "can_view": "View",
+        "can_control": "Control", "created_at": "Allocated",
+    }
+    column_details_list = column_list + [
+        "valid_from", "valid_until", "valid_days", "vacated_at", "updated_at",
+    ]
+    column_searchable_list = ["room.name", "guest.username", "invited_by_id"]
+    column_filters = ["status", "expires_at", "can_view", "can_control"]
+    column_sortable_list = ["id", "expires_at", "status", "created_at"]
+
+    form = GuestRoomForm
+    form_columns = [
+        "room_id", "guest_id", "invited_by_id", "expires_at",
+        "valid_from", "valid_until", "valid_days",
+        "can_view", "can_control", "status",
+    ]
+
+    def _fmt_bool_col(self, ctx, model, name) -> Markup:
+        return _fmt_bool(getattr(model, name, None))
+
+    def _fmt_dt_col(self, ctx, model, name):
+        return _fmt_dt(getattr(model, name, None))
+
+    def _fmt_status(self, ctx, model, name) -> Markup:
+        colors = {
+            "active": "success", "expired": "danger",
+            "vacant": "secondary", "inactive": "warning",
+        }
+        val = model.status.value
+        accessible = model.is_currently_accessible() if val == "active" else False
+        badge = colors.get(val, "secondary")
+        extra = (
+            ' <i class="fas fa-clock text-success" title="Currently accessible"></i>'
+            if accessible else ""
+        )
+        return Markup(
+            f'<span class="badge badge-{badge}">{val.capitalize()}</span>{extra}'
+        )
+
+    def _fmt_expires(self, ctx, model, name) -> Markup:
+        dt = model.expires_at
+        if dt is None:
+            return Markup('<span class="text-muted">—</span>')
+        now = datetime.now(tz=KAMPALA_TZ)
+        formatted = _fmt_dt(dt)
+        if dt <= now:
+            return Markup(f'<span class="text-danger">{formatted}</span>')
+        if dt <= now + timedelta(days=3):
+            return Markup(f'<span class="text-warning">{formatted}</span>')
+        return formatted
+
+    column_formatters = {
+        "can_view": _fmt_bool_col,
+        "can_control": _fmt_bool_col,
+        "status": _fmt_status,
+        "expires_at": _fmt_expires,
+        "created_at": _fmt_dt_col,
+    }
+    column_formatters_detail = column_formatters
+
+    def on_model_change(self, form, model, is_created: bool) -> None:
+        """
+        Convert valid_days from comma-separated string to list when saved
+        via the admin form.  The model's @validates('valid_days') will then
+        normalise and validate the values.
+        """
+        super().on_model_change(form, model, is_created)
+
+        if isinstance(model.valid_days, str):
+            raw = model.valid_days.strip()
+            model.valid_days = (
+                [d.strip().lower() for d in raw.split(",") if d.strip()]
+                if raw else None
+            )
+
+    def render(self, template, **kwargs):
+        kwargs.setdefault("model_name", self.name)
+        kwargs.setdefault("model_icon", self.model_icon)
+        return super().render(template, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# 9d. RoomAllocationView — allocate a vacant/inactive room to a member
+# ---------------------------------------------------------------------------
+
+class RoomAllocationView(AdminAccessMixin, BaseView):
+    """
+    Custom operation view: pick a vacant room from the pool and assign it to
+    a household member.  Uses RoomService.allocate_to_member so the existing
+    VACANT/INACTIVE row is reused, preserving device mappings.
+    """
+
+    @expose("/", methods=["GET", "POST"])
+    def index(self):
+        from HomeServer import database
+
+        form = AllocateMemberForm()
+
+        if form.validate_on_submit():
+            try:
+                room_member = database.session.get(RoomMember, form.room_member_id.data)
+                if room_member is None:
+                    flash("Room allocation record not found.", "error")
+                    return redirect(url_for("roomallocationview.index"))
+
+                RoomService.allocate_to_member(
+                    room_id=room_member.room_id,
+                    user_id=form.user_id.data,
+                    room_type=RoomType(form.room_type.data),
+                    can_view=form.can_view.data,
+                    can_control=form.can_control.data,
+                    can_manage=form.can_manage.data,
+                )
+                database.session.commit()
+                logger.info(
+                    "[ADMIN ACTION] Allocated room_id=%s to user_id=%s by %s",
+                    room_member.room_id, form.user_id.data,
+                    getattr(current_user, "username", "unknown"),
+                )
+                flash(f"Room '{room_member.room.name}' successfully allocated.", "success")
+                return redirect(url_for("roomallocationview.index"))
+            except Exception as exc:
+                database.session.rollback()
+                logger.exception("Failed to allocate room to member")
+                flash(f"Error allocating room: {exc}", "error")
+
+        return self.render("admin/allocate_room.html", form=form)
+
+
+# ---------------------------------------------------------------------------
+# 9e. GuestAllocationView — allocate a vacant room to a guest (admin only)
+# ---------------------------------------------------------------------------
+
+class GuestAllocationView(AdminAccessMixin, BaseView):
+    """
+    Custom operation view: allocate a VACANT room to a guest user with
+    time-bounded access.  Uses RoomService.allocate_to_guest.
+    invited_by is always the currently logged-in admin.
+    """
+
+    @expose("/", methods=["GET", "POST"])
+    def index(self):
+        from HomeServer import database
+
+        form = AllocateGuestForm()
+
+        if form.validate_on_submit():
+            try:
+                # Parse valid_days from the comma string if provided
+                raw_days = form.valid_days.data
+                valid_days = (
+                    [d.strip().lower() for d in raw_days.split(",") if d.strip()]
+                    if raw_days else None
+                )
+
+                RoomService.allocate_to_guest(
+                    room_id=form.room_id.data,
+                    guest_id=form.guest_id.data,
+                    invited_by_username=current_user.username,
+                    expires_at=form.expires_at.data,
+                    can_view=form.can_view.data,
+                    can_control=form.can_control.data,
+                    valid_from=form.valid_from.data or None,
+                    valid_until=form.valid_until.data or None,
+                    valid_days=valid_days,
+                )
+                database.session.commit()
+                logger.info(
+                    "[ADMIN ACTION] Guest room allocated room_id=%s guest_id=%s by %s",
+                    form.room_id.data, form.guest_id.data,
+                    current_user.username,
+                )
+                flash("Room successfully allocated to guest.", "success")
+                return redirect(url_for("guestallocationview.index"))
+            except Exception as exc:
+                database.session.rollback()
+                logger.exception("Failed to allocate room to guest")
+                flash(f"Error allocating room to guest: {exc}", "error")
+
+        return self.render("admin/allocate_guest.html", form=form)
+
+
+# ---------------------------------------------------------------------------
+# 9f. RoomManagementDashboard — overview + quick-action endpoints
+# ---------------------------------------------------------------------------
+
+class RoomManagementDashboard(AdminAccessMixin, BaseView):
+    """
+    Dashboard showing room allocation statistics, recent activity, and
+    guest allocations expiring within 3 days.
+
+    Also exposes quick-action endpoints for expiring a guest allocation or
+    releasing a member room without going through the full CRUD form.
+    """
+
+    @expose("/")
+    def index(self):
+        from HomeServer import database
+
+        now = datetime.now(tz=KAMPALA_TZ)
+        soon = now + timedelta(days=3)
+
+        total_rooms = database.session.query(Room).count()
+        active_member_allocations = (
+            database.session.query(RoomMember)
+            .filter_by(status=RoomStatus.ACTIVE).count()
+        )
+        active_guest_allocations = (
+            database.session.query(GuestRoom)
+            .filter_by(status=RoomStatus.ACTIVE).count()
+        )
+        vacant_rooms = (
+            database.session.query(RoomMember)
+            .filter(RoomMember.status.in_([RoomStatus.VACANT, RoomStatus.INACTIVE]))
+            .count()
+        )
+        expired_guests = (
+            database.session.query(GuestRoom)
+            .filter_by(status=RoomStatus.EXPIRED).count()
+        )
+
+        recent_member_allocations = (
+            database.session.query(RoomMember)
+            .order_by(RoomMember.created_at.desc())
+            .limit(10).all()
+        )
+        recent_guest_allocations = (
+            database.session.query(GuestRoom)
+            .order_by(GuestRoom.created_at.desc())
+            .limit(10).all()
+        )
+        soon_expiring = (
+            database.session.query(GuestRoom)
+            .filter(
+                GuestRoom.status == RoomStatus.ACTIVE,
+                GuestRoom.expires_at <= soon,
+            ).all()
+        )
+
+        return self.render(
+            "admin/room_dashboard.html",
+            total_rooms=total_rooms,
+            active_member_allocations=active_member_allocations,
+            active_guest_allocations=active_guest_allocations,
+            vacant_rooms=vacant_rooms,
+            expired_guests=expired_guests,
+            recent_member_allocations=recent_member_allocations,
+            recent_guest_allocations=recent_guest_allocations,
+            soon_expiring=soon_expiring,
+        )
+
+    @expose("/expire-guest/<int:guest_id>")
+    def expire_guest(self, guest_id):
+        from HomeServer import database
+
+        guest = database.session.get(GuestRoom, guest_id)
+        if guest is None:
+            flash("Guest allocation not found.", "error")
+            return redirect(url_for("roommanagementdashboard.index"))
+
+        guest.expire()
+        database.session.commit()
+        logger.info(
+            "[ADMIN ACTION] Manually expired GuestRoom id=%s (room=%s) by %s",
+            guest_id, getattr(guest.room, "name", "?"),
+            getattr(current_user, "username", "unknown"),
+        )
+        flash(f"Guest allocation for room '{guest.room.name}' has been expired.", "success")
+        return redirect(url_for("roommanagementdashboard.index"))
+
+    @expose("/release-room/<int:member_id>")
+    def release_room(self, member_id):
+        from HomeServer import database
+
+        member = database.session.get(RoomMember, member_id)
+        if member is None:
+            flash("Room allocation not found.", "error")
+            return redirect(url_for("roommanagementdashboard.index"))
+
+        if not member.user_id:
+            flash("This room is already vacant.", "warning")
+            return redirect(url_for("roommanagementdashboard.index"))
+
+        RoomService.release_member_room(member)
+        database.session.commit()
+        logger.info(
+            "[ADMIN ACTION] Released RoomMember id=%s (room=%s) by %s",
+            member_id, getattr(member.room, "name", "?"),
+            getattr(current_user, "username", "unknown"),
+        )
+        flash(f"Room '{member.room.name}' has been released back to the vacant pool.", "success")
+        return redirect(url_for("roommanagementdashboard.index"))
+
+
+# ---------------------------------------------------------------------------
+# 9g. BulkRoomOperationView — batch operations across multiple rooms
+# ---------------------------------------------------------------------------
+
+class BulkRoomOperationView(AdminAccessMixin, BaseView):
+    """
+    Batch operations for room management.
+
+    'deactivate' sets the Room.status to VACANT (not INACTIVE — INACTIVE is
+    reserved for member-deleted lifecycle rows on RoomMember, not rooms
+    themselves).  To fully remove a room from rotation, release its member
+    allocation first via the Dashboard.
+    """
+
+    @expose("/", methods=["GET", "POST"])
+    def index(self):
+        from HomeServer import database
+
+        form = BulkRoomOperationForm()
+
+        if form.validate_on_submit():
+            room_ids = form.room_ids.data
+            action_name = form.action.data
+
+            if not room_ids:
+                flash("No rooms selected.", "warning")
+                return redirect(request.url)
+
+            try:
+                count = 0
+
+                if action_name == "set_vacant":
+                    for room_id in room_ids:
+                        active_members = (
+                            database.session.query(RoomMember)
+                            .filter_by(room_id=room_id, status=RoomStatus.ACTIVE)
+                            .all()
+                        )
+                        for member in active_members:
+                            if member.user_id:
+                                RoomService.release_member_room(member)
+                                count += 1
+                    flash(f"Released {count} member allocation(s) to the vacant pool.", "success")
+
+                elif action_name in ("set_shared", "set_personal", "set_guest"):
+                    type_map = {
+                        "set_shared": RoomType.SHARED,
+                        "set_personal": RoomType.PERSONAL,
+                        "set_guest": RoomType.GUEST,
+                    }
+                    new_type = type_map[action_name]
+                    rooms = database.session.query(Room).filter(Room.id.in_(room_ids)).all()
+                    for room in rooms:
+                        room.room_type = new_type
+                        count += 1
+                    flash(
+                        f"Set {count} room(s) to {new_type.value.upper()} type.",
+                        "success",
+                    )
+
+                elif action_name == "activate":
+                    # Mark rooms as VACANT (ready for allocation)
+                    rooms = database.session.query(Room).filter(Room.id.in_(room_ids)).all()
+                    for room in rooms:
+                        room.status = RoomStatus.VACANT
+                        count += 1
+                    flash(f"Activated {count} room(s).", "success")
+
+                elif action_name == "deactivate":
+                    # Set to VACANT with no member — this makes them visible in the
+                    # pool but unallocated. Rooms have no INACTIVE status by design
+                    # (INACTIVE belongs to RoomMember rows, not Room rows).
+                    rooms = database.session.query(Room).filter(Room.id.in_(room_ids)).all()
+                    for room in rooms:
+                        active_members = (
+                            database.session.query(RoomMember)
+                            .filter_by(room_id=room.id, status=RoomStatus.ACTIVE)
+                            .all()
+                        )
+                        for active_member in active_members:
+                            if active_member.user_id:
+                                RoomService.release_member_room(active_member)
+                        room.status = RoomStatus.VACANT
+                        count += 1
+                    flash(
+                        f"Deactivated {count} room(s) — all members released, rooms set to vacant.",
+                        "success",
+                    )
+
+                database.session.commit()
+                logger.info(
+                    "[ADMIN ACTION] Bulk room op '%s' on %s rooms by %s",
+                    action_name, len(room_ids),
+                    getattr(current_user, "username", "unknown"),
+                )
+
+            except Exception as exc:
+                database.session.rollback()
+                logger.exception("Bulk room operation failed")
+                flash(f"Error performing bulk operation: {exc}", "error")
+
+            return redirect(url_for("bulkroomoperationview.index"))
+
+        return self.render("admin/bulk_room_ops.html", form=form)
+
+
+# =============================================================================
+# 10. Factory
 # =============================================================================
 
 def init_admin(app, db):
@@ -1046,9 +1692,16 @@ def init_admin(app, db):
 
     Registered views
     ----------------
-    /admin/              → Dashboard
-    /admin/user/         → UserAdmin        (category: Accounts)
-    /admin/otpsession/   → OTPSessionAdmin  (category: Accounts)
+    /admin/                          → Dashboard
+    /admin/user/                     → UserAdmin          (Identity & Access)
+    /admin/otpsession/               → OTPSessionAdmin    (Identity & Access)
+    /admin/room/                     → RoomAdminView      (Room Management)
+    /admin/roommember/               → RoomMemberAdmin    (Room Management)
+    /admin/guestroom/                → GuestRoomAdmin     (Room Management)
+    /admin/roommanagementdashboard/  → Dashboard         (Room Management)
+    /admin/roomallocationview/       → Allocate to Member (Room Operations)
+    /admin/guestallocationview/      → Allocate to Guest  (Room Operations)
+    /admin/bulkroomoperationview/    → Bulk Operations    (Room Operations)
     """
     admin = Admin(
         app,
@@ -1058,6 +1711,7 @@ def init_admin(app, db):
         theme=Bootstrap4Theme(base_template="admin/base.html"),
     )
 
+    # -- Identity & Access ---------------------------------------------------
     admin.add_view(
         UserAdmin(
             User,
@@ -1066,13 +1720,68 @@ def init_admin(app, db):
             category="Identity & Access",
         )
     )
-
     admin.add_view(
         OTPSessionAdmin(
             OTPSession,
             db.session,
             name="OTP Sessions",
             category="Identity & Access",
+        )
+    )
+
+    # -- Room Management (CRUD) ----------------------------------------------
+    admin.add_view(
+        RoomAdminView(
+            Room,
+            db.session,
+            name="Rooms",
+            category="Room Management",
+        )
+    )
+    admin.add_view(
+        RoomMemberAdminView(
+            RoomMember,
+            db.session,
+            name="Room Allocations",
+            category="Room Management",
+        )
+    )
+    admin.add_view(
+        GuestRoomAdminView(
+            GuestRoom,
+            db.session,
+            name="Guest Allocations",
+            category="Room Management",
+        )
+    )
+    admin.add_view(
+        RoomManagementDashboard(
+            name="Dashboard",
+            endpoint="roommanagementdashboard",
+            category="Room Management",
+        )
+    )
+
+    # -- Room Operations (custom workflows) ----------------------------------
+    admin.add_view(
+        RoomAllocationView(
+            name="Allocate to Member",
+            endpoint="roomallocationview",
+            category="Room Operations",
+        )
+    )
+    admin.add_view(
+        GuestAllocationView(
+            name="Allocate to Guest",
+            endpoint="guestallocationview",
+            category="Room Operations",
+        )
+    )
+    admin.add_view(
+        BulkRoomOperationView(
+            name="Bulk Operations",
+            endpoint="bulkroomoperationview",
+            category="Room Operations",
         )
     )
 

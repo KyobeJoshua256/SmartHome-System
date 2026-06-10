@@ -7,16 +7,17 @@ from .chats import(
     MessageType,
     ConversationType,
 )
-from HomeServer.models.chats import (
-    Conversation,
-    ConversationParticipant,
-    Message,
-    MessageType,
-    ConversationType,
+
+from .rooms import (
+    Room,
+    RoomMember,
+    GuestRoom,
+    RoomService
 )
 
 __all__ = [
     'User', 'OTPSession', 'UserRole',
     'Conversation', 'ConversationParticipant', 'Message',
     'MessageType', 'ConversationType',
+    'Room', 'RoomMember','GuestRoom','RoomService'
 ]

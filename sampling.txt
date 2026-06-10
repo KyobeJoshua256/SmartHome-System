@@ -1,0 +1,292 @@
+from HomeServer.models.rooms import Room, RoomMember, GuestRoom, RoomStatus, RoomType, RoomService
+from HomeServer.models.users import User
+from HomeServer.forms.rooms import (
+    RoomForm, RoomMemberForm, GuestRoomForm, 
+    AllocateMemberForm, AllocateGuestForm, BulkRoomOperationForm
+)
+
+
+class RoomAdminView(AdminAuthMixin, ModelView):
+    """CRUD view for Rooms."""
+    
+    column_list = ['id', 'name', 'room_type', 'status', 'created_at', 'updated_at']
+    column_searchable_list = ['name']
+    column_filters = ['room_type', 'status']
+    column_sortable_list = ['id', 'name', 'room_type', 'status', 'created_at']
+    column_details_list = ['id', 'name', 'room_type', 'status', 'created_at', 'updated_at']
+    
+    form = RoomForm
+    form_columns = ['name', 'room_type', 'status']
+    
+    def on_model_change(self, form, model, is_created):
+        """When creating a room, automatically create vacant RoomMember entry."""
+        super().on_model_change(form, model, is_created)
+        if is_created:
+            vacant_allocation = RoomMember(
+                room_id=model.id,
+                user_id=None,
+                room_type=model.room_type,
+                status=RoomStatus.VACANT,
+                can_view=True,
+                can_control=True,
+                can_manage=False
+            )
+            database.session.add(vacant_allocation)
+
+
+class RoomMemberAdminView(AdminAuthMixin, ModelView):
+    """CRUD view for RoomMember allocations."""
+    
+    column_list = ['id', 'room', 'user', 'room_type', 'status', 'can_view', 
+                   'can_control', 'can_manage', 'vacated_at', 'created_at']
+    column_searchable_list = ['room.name', 'user.username']
+    column_filters = ['room_type', 'status', 'can_view', 'can_control', 'can_manage']
+    column_sortable_list = ['id', 'room_type', 'status', 'created_at', 'vacated_at']
+    
+    form = RoomMemberForm
+    form_columns = ['room_id', 'user_id', 'room_type', 'status', 'can_view', 
+                    'can_control', 'can_manage']
+    
+    def on_model_change(self, form, model, is_created):
+        """Ensure consistency when modifying allocations."""
+        # Handle null user_id (convert 0 to None)
+        if model.user_id == 0:
+            model.user_id = None
+        
+        # Auto-update status based on user assignment
+        if model.user_id is None and model.status == RoomStatus.ACTIVE:
+            model.status = RoomStatus.VACANT
+        elif model.user_id is not None and model.status in [RoomStatus.VACANT, RoomStatus.INACTIVE]:
+            model.status = RoomStatus.ACTIVE
+            model.vacated_at = None
+
+
+class GuestRoomAdminView(AdminAuthMixin, ModelView):
+    """CRUD view for GuestRoom allocations."""
+    
+    column_list = ['id', 'room', 'guest', 'invited_by', 'status', 'expires_at',
+                   'can_view', 'can_control', 'created_at']
+    column_searchable_list = ['room.name', 'guest.username', 'invited_by_id']
+    column_filters = ['status', 'expires_at', 'can_view', 'can_control']
+    column_sortable_list = ['id', 'expires_at', 'status', 'created_at']
+    
+    form = GuestRoomForm
+    form_columns = ['room_id', 'guest_id', 'invited_by_id', 'expires_at', 'valid_from',
+                    'valid_until', 'valid_days', 'can_view', 'can_control', 'status']
+    
+    def on_model_change(self, form, model, is_created):
+        """Handle conversion of valid_days from string to list."""
+        if hasattr(form, 'valid_days') and isinstance(model.valid_days, str):
+            if model.valid_days:
+                model.valid_days = [d.strip().lower() for d in model.valid_days.split(',')]
+            else:
+                model.valid_days = None
+
+
+# ---------------------------------------------------------------------------
+# Custom Operation Views
+# ---------------------------------------------------------------------------
+
+class RoomAllocationView(AdminAuthMixin, BaseView):
+    """Custom view for allocating rooms to members."""
+    
+    @expose('/', methods=['GET', 'POST'])
+    def index(self):
+        form = AllocateMemberForm()
+        
+        if form.validate_on_submit():
+            try:
+                # Get the room member record
+                room_member = RoomMember.query.get(form.room_member_id.data)
+                
+                # Use the service to allocate
+                allocation = RoomService.allocate_to_member(
+                    room_id=room_member.room_id,
+                    user_id=form.user_id.data,
+                    room_type=RoomType(form.room_type.data),
+                    can_view=form.can_view.data,
+                    can_control=form.can_control.data,
+                    can_manage=form.can_manage.data
+                )
+                database.session.commit()
+                flash(f'Successfully allocated {room_member.room.name} to user!', 'success')
+                return redirect(url_for('roomallocationview.index'))
+            except Exception as e:
+                flash(f'Error allocating room: {str(e)}', 'error')
+                database.session.rollback()
+        
+        return self.render('admin/allocate_room.html', form=form)
+
+
+class GuestAllocationView(AdminAuthMixin, BaseView):
+    """Custom view for allocating rooms to guests."""
+    
+    @expose('/', methods=['GET', 'POST'])
+    def index(self):
+        form = AllocateGuestForm()
+        
+        if form.validate_on_submit():
+            try:
+                allocation = RoomService.allocate_to_guest(
+                    room_id=form.room_id.data,
+                    guest_id=form.guest_id.data,
+                    invited_by_username=current_user.username,
+                    expires_at=form.expires_at.data,
+                    can_view=form.can_view.data,
+                    can_control=form.can_control.data,
+                    valid_from=form.valid_from.data,
+                    valid_until=form.valid_until.data,
+                    valid_days=form.valid_days.data if form.valid_days.data else None
+                )
+                database.session.commit()
+                flash(f'Successfully allocated room to guest!', 'success')
+                return redirect(url_for('guestallocationview.index'))
+            except Exception as e:
+                flash(f'Error allocating room to guest: {str(e)}', 'error')
+                database.session.rollback()
+        
+        return self.render('admin/allocate_guest.html', form=form)
+
+
+class RoomManagementDashboard(AdminAuthMixin, BaseView):
+    """Dashboard showing room allocation status."""
+    
+    @expose('/')
+    def index(self):
+        from datetime import datetime, timedelta
+        
+        # Statistics
+        total_rooms = Room.query.count()
+        active_member_allocations = RoomMember.query.filter_by(status=RoomStatus.ACTIVE).count()
+        active_guest_allocations = GuestRoom.query.filter_by(status=RoomStatus.ACTIVE).count()
+        vacant_rooms = RoomMember.query.filter(
+            RoomMember.status.in_([RoomStatus.VACANT, RoomStatus.INACTIVE])
+        ).count()
+        expired_guests = GuestRoom.query.filter_by(status=RoomStatus.EXPIRED).count()
+        
+        # Recent allocations
+        recent_member_allocations = RoomMember.query.order_by(
+            RoomMember.created_at.desc()
+        ).limit(10).all()
+        
+        recent_guest_allocations = GuestRoom.query.order_by(
+            GuestRoom.created_at.desc()
+        ).limit(10).all()
+        
+        # Rooms needing attention (expiring soon)
+        soon_expiring = GuestRoom.query.filter(
+            GuestRoom.status == RoomStatus.ACTIVE,
+            GuestRoom.expires_at <= datetime.now() + timedelta(days=3)
+        ).all()
+        
+        return self.render('admin/room_dashboard.html',
+                         total_rooms=total_rooms,
+                         active_member_allocations=active_member_allocations,
+                         active_guest_allocations=active_guest_allocations,
+                         vacant_rooms=vacant_rooms,
+                         expired_guests=expired_guests,
+                         recent_member_allocations=recent_member_allocations,
+                         recent_guest_allocations=recent_guest_allocations,
+                         soon_expiring=soon_expiring)
+    
+    @expose('/expire-guest/<int:guest_id>')
+    def expire_guest(self, guest_id):
+        guest = GuestRoom.query.get_or_404(guest_id)
+        guest.expire()
+        database.session.commit()
+        flash(f'Guest allocation for room {guest.room.name} has been expired.', 'success')
+        return redirect(url_for('roommanagementdashboard.index'))
+    
+    @expose('/release-room/<int:member_id>')
+    def release_room(self, member_id):
+        member = RoomMember.query.get_or_404(member_id)
+        if member.user_id:
+            RoomService.release_member_room(member)
+            database.session.commit()
+            flash(f'Room {member.room.name} has been released.', 'success')
+        else:
+            flash('This room is already vacant.', 'warning')
+        return redirect(url_for('roommanagementdashboard.index'))
+
+
+class BulkRoomOperationView(AdminAuthMixin, BaseView):
+    """Bulk operations for room management."""
+    
+    @expose('/', methods=['GET', 'POST'])
+    def index(self):
+        form = BulkRoomOperationForm()
+        
+        if form.validate_on_submit():
+            room_ids = form.room_ids.data
+            action = form.action.data
+            
+            if not room_ids:
+                flash('No rooms selected.', 'warning')
+                return redirect(request.url)
+            
+            try:
+                if action == 'set_vacant':
+                    # Release all selected rooms from their current members
+                    for room_id in room_ids:
+                        member = RoomMember.query.filter_by(room_id=room_id, status=RoomStatus.ACTIVE).first()
+                        if member and member.user_id:
+                            RoomService.release_member_room(member)
+                    flash(f'Released {len(room_ids)} rooms.', 'success')
+                
+                elif action == 'set_shared':
+                    rooms = Room.query.filter(Room.id.in_(room_ids)).all()
+                    for room in rooms:
+                        room.room_type = RoomType.SHARED
+                    flash(f'Set {len(rooms)} rooms to SHARED type.', 'success')
+                
+                elif action == 'set_personal':
+                    rooms = Room.query.filter(Room.id.in_(room_ids)).all()
+                    for room in rooms:
+                        room.room_type = RoomType.PERSONAL
+                    flash(f'Set {len(rooms)} rooms to PERSONAL type.', 'success')
+                
+                elif action == 'set_guest':
+                    rooms = Room.query.filter(Room.id.in_(room_ids)).all()
+                    for room in rooms:
+                        room.room_type = RoomType.GUEST
+                    flash(f'Set {len(rooms)} rooms to GUEST type.', 'success')
+                
+                elif action == 'activate':
+                    rooms = Room.query.filter(Room.id.in_(room_ids)).all()
+                    for room in rooms:
+                        room.status = RoomStatus.VACANT
+                    flash(f'Activated {len(rooms)} rooms.', 'success')
+                
+                elif action == 'deactivate':
+                    rooms = Room.query.filter(Room.id.in_(room_ids)).all()
+                    for room in rooms:
+                        room.status = RoomStatus.INACTIVE
+                    flash(f'Deactivated {len(rooms)} rooms.', 'success')
+                
+                database.session.commit()
+            except Exception as e:
+                flash(f'Error performing bulk operation: {str(e)}', 'error')
+                database.session.rollback()
+            
+            return redirect(url_for('bulkroomoperationview.index'))
+        
+        return self.render('admin/bulk_room_ops.html', form=form)
+
+
+# ---------------------------------------------------------------------------
+# Registration Function
+# ---------------------------------------------------------------------------
+
+def register_admin_views(admin):
+    """Register all admin views with the Flask-Admin instance."""
+    
+    # Standard CRUD views
+    admin.add_view(RoomAdminView(Room, database.session, name="Rooms", category="Room Management"))
+    admin.add_view(RoomMemberAdminView(RoomMember, database.session, name="Room Allocations", category="Room Management"))
+    admin.add_view(GuestRoomAdminView(GuestRoom, database.session, name="Guest Allocations", category="Room Management"))
+    
+    # Custom operation views
+    admin.add_view(RoomAllocationView(name="Allocate to Member", category="Room Operations"))
+    admin.add_view(GuestAllocationView(name="Allocate to Guest", category="Room Operations"))
+    admin.add_view(BulkRoomOperationView(name="Bulk Operations", category="Room Operations"))
+    admin.add_view(RoomManagementDashboard(name="Dashboard", category="Room Management"))

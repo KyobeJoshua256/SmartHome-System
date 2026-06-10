@@ -44,6 +44,7 @@ ph = PasswordHasher(time_cost=3, memory_cost=32768, parallelism=2)
 class UserRole(PyEnum):
     ADMIN = "admin"
     USER = "user"
+    GUEST = "guest"
 
 
 # =============================================================================
@@ -105,12 +106,12 @@ class User(UserMixin, database.Model):
         foreign_keys="RoomMember.user_id",
         lazy="dynamic",
     )
-    guest_rooms = relationship(
-        "GuestRoom",
-        back_populates="guest",
-        foreign_keys="GuestRoom.guest_id",
-        lazy="dynamic",
-    )
+    # guest_rooms = relationship(
+    #     "GuestRoom",
+    #     back_populates="guest",
+    #     foreign_keys="GuestRoom.guest_id",
+    #     lazy="dynamic",
+    # )
 
     conversations = relationship(
         "ConversationParticipant",
