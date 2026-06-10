@@ -1522,7 +1522,7 @@ class RoomManagementDashboard(AdminAccessMixin, BaseView):
         )
 
         return self.render(
-            "admin/room_dashboard.html",
+            "admin/rooms/dashboard.html",
             total_rooms=total_rooms,
             active_member_allocations=active_member_allocations,
             active_guest_allocations=active_guest_allocations,

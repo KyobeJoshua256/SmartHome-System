@@ -106,12 +106,12 @@ class User(UserMixin, database.Model):
         foreign_keys="RoomMember.user_id",
         lazy="dynamic",
     )
-    # guest_rooms = relationship(
-    #     "GuestRoom",
-    #     back_populates="guest",
-    #     foreign_keys="GuestRoom.guest_id",
-    #     lazy="dynamic",
-    # )
+    guest_rooms = relationship(
+        "GuestRoom",
+        back_populates="guest",
+        foreign_keys="GuestRoom.guest_id",
+        lazy="dynamic",
+    )
 
     conversations = relationship(
         "ConversationParticipant",

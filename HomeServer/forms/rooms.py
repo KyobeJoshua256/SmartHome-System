@@ -154,7 +154,7 @@ class GuestRoomForm(FlaskForm):
         "Expires At",
         format="%Y-%m-%d %H:%M:%S",
         validators=[DataRequired()],
-        default=_now_kampala,
+        default=now_kampala,
         description="Hard expiry — access is revoked by the scheduler at this moment.",
     )
     valid_from = TimeField(
@@ -295,7 +295,7 @@ class AllocateGuestForm(FlaskForm):
         "Expires At",
         format="%Y-%m-%d %H:%M:%S",
         validators=[DataRequired()],
-        default=_now_kampala,
+        default=now_kampala,
         description="Hard expiry enforced by the APScheduler job.",
     )
     valid_from = TimeField(

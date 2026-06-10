@@ -1,0 +1,442 @@
+{% extends 'admin/base.html' %}
+
+{% block head_css %}
+{{ super() }}
+<style>
+  /* ── KPI cards ─────────────────────────────────────────── */
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.75rem;
+  }
+
+  .kpi-card {
+    background: var(--card-bg, #1e2330);
+    border: 1px solid var(--border-color, #2e3450);
+    border-radius: 10px;
+    padding: 1.25rem 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: .35rem;
+  }
+
+  .kpi-card .kpi-label {
+    font-size: .72rem;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--text-muted, #8892a4);
+  }
+
+  .kpi-card .kpi-value {
+    font-size: 2rem;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--text-primary, #e2e8f0);
+  }
+
+  .kpi-card .kpi-icon {
+    font-size: 1.1rem;
+    margin-bottom: .2rem;
+  }
+
+  .kpi-card.kpi-total   .kpi-icon { color: #60a5fa; }
+  .kpi-card.kpi-members .kpi-icon { color: #34d399; }
+  .kpi-card.kpi-guests  .kpi-icon { color: #a78bfa; }
+  .kpi-card.kpi-vacant  .kpi-icon { color: #94a3b8; }
+  .kpi-card.kpi-expired .kpi-icon { color: #f87171; }
+
+  /* ── Section headings ──────────────────────────────────── */
+  .section-heading {
+    font-size: .78rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .07em;
+    color: var(--text-muted, #8892a4);
+    margin: 1.75rem 0 .75rem;
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+  }
+
+  .section-heading::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border-color, #2e3450);
+  }
+
+  /* ── Alert banner ──────────────────────────────────────── */
+  .expiry-alert {
+    background: rgba(251,191,36,.08);
+    border: 1px solid rgba(251,191,36,.3);
+    border-left: 3px solid #fbbf24;
+    border-radius: 8px;
+    padding: .85rem 1.1rem;
+    margin-bottom: 1.25rem;
+    display: flex;
+    align-items: flex-start;
+    gap: .75rem;
+  }
+
+  .expiry-alert i { color: #fbbf24; margin-top: .15rem; }
+
+  .expiry-alert .expiry-list {
+    list-style: none;
+    margin: .4rem 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: .3rem;
+  }
+
+  .expiry-alert .expiry-list li {
+    font-size: .84rem;
+    color: var(--text-primary, #e2e8f0);
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+  }
+
+  /* ── Tables ────────────────────────────────────────────── */
+  .dash-table-wrap {
+    background: var(--card-bg, #1e2330);
+    border: 1px solid var(--border-color, #2e3450);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 1.75rem;
+  }
+
+  .dash-table-wrap table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: .84rem;
+  }
+
+  .dash-table-wrap thead th {
+    background: var(--table-head-bg, #161b27);
+    padding: .65rem 1rem;
+    text-align: left;
+    font-size: .72rem;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--text-muted, #8892a4);
+    border-bottom: 1px solid var(--border-color, #2e3450);
+    white-space: nowrap;
+  }
+
+  .dash-table-wrap tbody tr {
+    border-bottom: 1px solid var(--border-color, #2e3450);
+    transition: background .15s;
+  }
+
+  .dash-table-wrap tbody tr:last-child { border-bottom: none; }
+  .dash-table-wrap tbody tr:hover { background: var(--row-hover, rgba(255,255,255,.03)); }
+
+  .dash-table-wrap td {
+    padding: .7rem 1rem;
+    color: var(--text-primary, #e2e8f0);
+    vertical-align: middle;
+  }
+
+  .dash-table-wrap .empty-row td {
+    text-align: center;
+    color: var(--text-muted, #8892a4);
+    padding: 1.5rem;
+  }
+
+  /* ── Badges ────────────────────────────────────────────── */
+  .badge {
+    display: inline-block;
+    padding: .2em .55em;
+    font-size: .72rem;
+    font-weight: 600;
+    border-radius: 4px;
+    white-space: nowrap;
+  }
+
+  .badge-active   { background: rgba(52,211,153,.15); color: #34d399; }
+  .badge-vacant   { background: rgba(148,163,184,.12); color: #94a3b8; }
+  .badge-inactive { background: rgba(251,191,36,.12); color: #fbbf24; }
+  .badge-expired  { background: rgba(248,113,113,.12); color: #f87171; }
+
+  /* ── Action buttons ────────────────────────────────────── */
+  .btn-action {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    padding: .3rem .75rem;
+    font-size: .78rem;
+    font-weight: 500;
+    border-radius: 5px;
+    text-decoration: none;
+    transition: opacity .15s;
+    white-space: nowrap;
+  }
+
+  .btn-action:hover { opacity: .8; text-decoration: none; }
+  .btn-release { background: rgba(96,165,250,.15); color: #60a5fa; }
+  .btn-expire  { background: rgba(248,113,113,.15); color: #f87171; }
+
+  /* ── Two-column layout for tables ─────────────────────── */
+  .table-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.25rem;
+  }
+
+  @media (max-width: 900px) {
+    .table-row { grid-template-columns: 1fr; }
+  }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="container-fluid" style="padding: 1.5rem 1.75rem;">
+
+  {# ── Page header ──────────────────────────────────────── #}
+  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1.5rem; flex-wrap:wrap; gap:.75rem;">
+    <div>
+      <h4 style="margin:0; font-weight:700; color:var(--text-primary,#e2e8f0);">
+        <i class="fas fa-chart-pie" style="color:#60a5fa; margin-right:.5rem;"></i>
+        Room Management Dashboard
+      </h4>
+      <div style="font-size:.8rem; color:var(--text-muted,#8892a4); margin-top:.2rem;">
+        Live overview of all room allocations
+      </div>
+    </div>
+    <div style="display:flex; gap:.6rem; flex-wrap:wrap;">
+      <a href="{{ url_for('roomallocationview.index') }}" class="btn-action btn-release">
+        <i class="fas fa-user-plus"></i> Allocate Member
+      </a>
+      <a href="{{ url_for('guestallocationview.index') }}" class="btn-action" style="background:rgba(167,139,250,.15);color:#a78bfa;">
+        <i class="fas fa-user-tag"></i> Allocate Guest
+      </a>
+      <a href="{{ url_for('bulkroomoperationview.index') }}" class="btn-action" style="background:rgba(148,163,184,.1);color:#94a3b8;">
+        <i class="fas fa-layer-group"></i> Bulk Ops
+      </a>
+    </div>
+  </div>
+
+  {# ── Flash messages ───────────────────────────────────── #}
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="alert alert-{{ 'danger' if category == 'error' else category }}"
+             style="border-radius:8px; margin-bottom:1rem;">
+          {{ message }}
+        </div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  {# ── KPI cards ────────────────────────────────────────── #}
+  <div class="kpi-grid">
+    <div class="kpi-card kpi-total">
+      <div class="kpi-icon"><i class="fas fa-door-open"></i></div>
+      <div class="kpi-value">{{ total_rooms }}</div>
+      <div class="kpi-label">Total Rooms</div>
+    </div>
+    <div class="kpi-card kpi-members">
+      <div class="kpi-icon"><i class="fas fa-bed"></i></div>
+      <div class="kpi-value">{{ active_member_allocations }}</div>
+      <div class="kpi-label">Active Members</div>
+    </div>
+    <div class="kpi-card kpi-guests">
+      <div class="kpi-icon"><i class="fas fa-user-clock"></i></div>
+      <div class="kpi-value">{{ active_guest_allocations }}</div>
+      <div class="kpi-label">Active Guests</div>
+    </div>
+    <div class="kpi-card kpi-vacant">
+      <div class="kpi-icon"><i class="fas fa-inbox"></i></div>
+      <div class="kpi-value">{{ vacant_rooms }}</div>
+      <div class="kpi-label">Vacant Slots</div>
+    </div>
+    <div class="kpi-card kpi-expired">
+      <div class="kpi-icon"><i class="fas fa-history"></i></div>
+      <div class="kpi-value">{{ expired_guests }}</div>
+      <div class="kpi-label">Expired Guests</div>
+    </div>
+  </div>
+
+  {# ── Soon-expiring alert ───────────────────────────────── #}
+  {% if soon_expiring %}
+  <div class="expiry-alert">
+    <i class="fas fa-exclamation-triangle"></i>
+    <div>
+      <strong style="color:#fbbf24;">
+        {{ soon_expiring|length }} guest allocation{{ 's' if soon_expiring|length != 1 }} expiring within 3 days
+      </strong>
+      <ul class="expiry-list">
+        {% for g in soon_expiring %}
+        <li>
+          <i class="fas fa-circle" style="font-size:.45rem; color:#fbbf24;"></i>
+          <strong>{{ g.room.name }}</strong>
+          &mdash;
+          {{ g.guest.username if g.guest else '(guest removed)' }}
+          &mdash;
+          <span style="color:#fbbf24;">
+            expires {{ g.expires_at.strftime('%Y-%m-%d %H:%M') }}
+          </span>
+          <a href="{{ url_for('roommanagementdashboard.expire_guest', guest_id=g.id) }}"
+             class="btn-action btn-expire"
+             style="padding:.15rem .55rem; font-size:.72rem;"
+             onclick="return confirm('Expire this guest allocation now?')">
+            <i class="fas fa-times"></i> Expire now
+          </a>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Recent activity tables ───────────────────────────── #}
+  <div class="table-row">
+
+    {# Member allocations #}
+    <div>
+      <div class="section-heading">
+        <i class="fas fa-bed"></i> Recent Member Allocations
+      </div>
+      <div class="dash-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Room</th>
+              <th>Member</th>
+              <th>Type</th>
+              <th>Status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if recent_member_allocations %}
+              {% for m in recent_member_allocations %}
+              <tr>
+                <td>
+                  <i class="fas fa-door-open" style="color:#60a5fa; margin-right:.35rem;"></i>
+                  {{ m.room.name if m.room else '—' }}
+                </td>
+                <td>
+                  {% if m.user %}
+                    <i class="fas fa-user" style="color:#94a3b8; margin-right:.35rem;"></i>
+                    {{ m.user.username }}
+                  {% else %}
+                    <span style="color:var(--text-muted,#8892a4);">Vacant</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <span style="text-transform:capitalize; color:var(--text-muted,#8892a4); font-size:.8rem;">
+                    {{ m.room_type.value }}
+                  </span>
+                </td>
+                <td>
+                  <span class="badge badge-{{ m.status.value }}">
+                    {{ m.status.value|capitalize }}
+                  </span>
+                </td>
+                <td>
+                  {% if m.user_id and m.status.value == 'active' %}
+                  <a href="{{ url_for('roommanagementdashboard.release_room', member_id=m.id) }}"
+                     class="btn-action btn-release"
+                     onclick="return confirm('Release {{ m.room.name if m.room else 'this room' }} back to the vacant pool?')">
+                    <i class="fas fa-sign-out-alt"></i> Release
+                  </a>
+                  {% else %}
+                    <span style="color:var(--text-muted,#8892a4); font-size:.8rem;">—</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            {% else %}
+              <tr class="empty-row">
+                <td colspan="5">
+                  <i class="fas fa-inbox" style="margin-right:.4rem;"></i>
+                  No member allocations yet
+                </td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {# Guest allocations #}
+    <div>
+      <div class="section-heading">
+        <i class="fas fa-user-clock"></i> Recent Guest Allocations
+      </div>
+      <div class="dash-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Room</th>
+              <th>Guest</th>
+              <th>Status</th>
+              <th>Expires</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if recent_guest_allocations %}
+              {% for g in recent_guest_allocations %}
+              <tr>
+                <td>
+                  <i class="fas fa-door-open" style="color:#a78bfa; margin-right:.35rem;"></i>
+                  {{ g.room.name if g.room else '—' }}
+                </td>
+                <td>
+                  {% if g.guest %}
+                    <i class="fas fa-user-tag" style="color:#94a3b8; margin-right:.35rem;"></i>
+                    {{ g.guest.username }}
+                  {% else %}
+                    <span style="color:var(--text-muted,#8892a4);">Removed</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <span class="badge badge-{{ g.status.value }}">
+                    {{ g.status.value|capitalize }}
+                  </span>
+                  {% if g.status.value == 'active' and g.is_currently_accessible() %}
+                    <i class="fas fa-clock" style="color:#34d399; margin-left:.3rem;" title="Currently accessible"></i>
+                  {% endif %}
+                </td>
+                <td style="font-size:.8rem;">
+                  {% if g.expires_at %}
+                    {% set now_ts = now() if now is defined else none %}
+                    <span style="color:{% if g.status.value == 'expired' %}#f87171{% elif g.expires_at.strftime('%Y-%m-%d') <= (now_ts.strftime('%Y-%m-%d') if now_ts else '9999') %}#fbbf24{% else %}var(--text-muted,#8892a4){% endif %};">
+                      {{ g.expires_at.strftime('%Y-%m-%d %H:%M') }}
+                    </span>
+                  {% else %}—{% endif %}
+                </td>
+                <td>
+                  {% if g.status.value == 'active' %}
+                  <a href="{{ url_for('roommanagementdashboard.expire_guest', guest_id=g.id) }}"
+                     class="btn-action btn-expire"
+                     onclick="return confirm('Expire guest access for {{ g.room.name if g.room else 'this room' }}?')">
+                    <i class="fas fa-times"></i> Expire
+                  </a>
+                  {% else %}
+                    <span style="color:var(--text-muted,#8892a4); font-size:.8rem;">—</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            {% else %}
+              <tr class="empty-row">
+                <td colspan="5">
+                  <i class="fas fa-inbox" style="margin-right:.4rem;"></i>
+                  No guest allocations yet
+                </td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>{# end .table-row #}
+
+</div>
+{% endblock %}
