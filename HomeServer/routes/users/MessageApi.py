@@ -4,31 +4,27 @@
 # ============================================================================
 
 import time
-from datetime import timezone                           
+from datetime import timezone
 from typing import Any
-
 from flask import (
-    Blueprint, request, jsonify, current_app,
+Blueprint, request, jsonify, current_app,
 )
 from flask_login import login_required, current_user
 from flask_wtf.csrf import generate_csrf
 from sqlalchemy import or_, exc
-
 from HomeServer.models import (
-    User, Conversation, ConversationParticipant, Message, MessageType,
-    ConversationType,
+User, Conversation, ConversationParticipant, Message, MessageType,
+ConversationType,
 )
-from HomeServer.models.utils import now_utc, to_uganda_time          
-from HomeServer.models.chats import _hmac_uid           
+from HomeServer.models.utils import now_utc, to_uganda_time
+from HomeServer.models.chats import _hmac_uid
 from HomeServer import database as db
-
 
 # ============================================================================
 # BLUEPRINT DEFINITION
 # ============================================================================
 
 message_api_bp = Blueprint('message_api', __name__)
-
 
 # ============================================================================
 # SECTION 1: CSRF TOKEN REFRESH
@@ -48,7 +44,6 @@ def csrf_refresh() -> Any:
         current_app.logger.error(f"CSRF refresh error: {error}")
         return jsonify({'error': 'Failed to generate CSRF token'}), 500
 
-
 # ============================================================================
 # SECTION 2: USER SEARCH (for starting conversations)
 # ============================================================================
@@ -61,7 +56,7 @@ def search_users() -> Any:
         q = request.args.get('q', '').strip()
         if not q:
             return jsonify({'users': []}), 200
-
+        
         like = f'%{q}%'
         users = (
             User.query
@@ -102,10 +97,10 @@ def search_users() -> Any:
         current_app.logger.error(f"Error in search_users: {error}", exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500
 
-
 # ============================================================================
 # SECTION 3: FIND OR CREATE CONVERSATION
 # ============================================================================
+
 from .chatshelper import find_or_create_direct_conversation, get_conversation_summary
 
 @message_api_bp.route('/conversations/find-or-create', methods=['POST'])
@@ -113,9 +108,10 @@ from .chatshelper import find_or_create_direct_conversation, get_conversation_su
 def find_or_create_conversation() -> Any:
     data         = request.get_json(silent=True) or {}
     recipient_id = data.get('recipient_id')
+    
     if not recipient_id:
         return jsonify({'error': 'recipient_id is required'}), 400
-
+    
     recipient = User.query.filter_by(id=recipient_id, is_active=True, is_deleted=False).first()
     if not recipient:
         return jsonify({'error': 'User not found'}), 404
@@ -126,6 +122,7 @@ def find_or_create_conversation() -> Any:
 
     summary = get_conversation_summary(conversation, current_user.id)
     return jsonify({'conversation': summary}), 200
+
 # ============================================================================
 # SECTION 4: GET MESSAGES (with read receipts)
 # ============================================================================
@@ -140,9 +137,10 @@ def get_messages(conversation_id: int) -> Any:
             user_id=current_user.id,
             is_deleted=False,
         ).first()
+        
         if not participant:
             return jsonify({'error': 'Conversation not found or access denied'}), 404
-
+        
         messages = (
             Message.query
             .filter_by(conversation_id=conversation_id, is_deleted=False)
@@ -186,7 +184,6 @@ def get_messages(conversation_id: int) -> Any:
         current_app.logger.error(f"Error in get_messages: {error}", exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500
 
-
 # ============================================================================
 # SECTION 5: SEND MESSAGE
 # ============================================================================
@@ -201,16 +198,17 @@ def send_message(conversation_id: int) -> Any:
             user_id=current_user.id,
             is_deleted=False,
         ).first()
+        
         if not participant:
             return jsonify({'error': 'Conversation not found or access denied'}), 404
-
+        
         body    = request.get_json(silent=True) or {}
         content = (body.get('content') or '').strip()
 
         if not content:
             return jsonify({'error': 'Message content cannot be empty'}), 400
         if len(content) > 10_000:
-            return jsonify({'error': 'Message too long (max 10 000 characters)'}), 400
+            return jsonify({'error': 'Message too long (max 10000 characters)'}), 400
 
         message_type_str = body.get('message_type', MessageType.TEXT.value)
         try:
@@ -261,8 +259,18 @@ def send_message(conversation_id: int) -> Any:
                     'message_type':    message_type_enum.value,
                     'reply_to_id':     msg.reply_to_id,
                 }
+                
+                # 1. Send to everyone currently viewing this specific chat
                 socketio.emit('new_message', payload, room=f'conv_{conversation_id}')
+                
+                # 2. Send to the sender's other tabs/devices
                 socketio.emit('new_message', payload, room=f'user_{current_user.id}')
+                
+                # 3. FIX: Send to all other participants' private rooms so their 
+                #    dashboard unread badges update even if the chat isn't open!
+                for p in other_participants:
+                    socketio.emit('new_message', payload, room=f'user_{p.user_id}')
+                    
         except Exception as sock_err:
             current_app.logger.warning(f"Socket emit failed for message {msg.id}: {sock_err}")
 
@@ -292,7 +300,6 @@ def send_message(conversation_id: int) -> Any:
         db.session.rollback()
         return jsonify({'error': 'Internal server error'}), 500
 
-
 # ============================================================================
 # SECTION 6: MARK SINGLE MESSAGE AS READ
 # ============================================================================
@@ -303,12 +310,12 @@ def mark_message_read(message_id: int) -> Any:
     """Mark a specific message as read by the current user."""
     try:
         message = Message.query.get_or_404(message_id)
-
+        
         participant = ConversationParticipant.query.filter_by(
             conversation_id=message.conversation_id,
             user_id=current_user.id,
             is_deleted=False,
-        ).first()
+        ).first() 
 
         if not participant:
             return jsonify({'error': 'Access denied'}), 403
@@ -361,7 +368,6 @@ def mark_message_read(message_id: int) -> Any:
         current_app.logger.error(f"Error in mark_message_read: {error}", exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500
 
-
 # ============================================================================
 # SECTION 7: MARK ENTIRE CONVERSATION AS READ
 # ============================================================================
@@ -376,7 +382,7 @@ def mark_conversation_read(conversation_id: int) -> Any:
             user_id=current_user.id,
             is_deleted=False,
         ).first()
-
+        
         if not participant:
             return jsonify({'error': 'Conversation not found or access denied'}), 404
 
@@ -402,7 +408,7 @@ def mark_conversation_read(conversation_id: int) -> Any:
                 newly_read_count += 1
 
         if newly_read_count > 0:
-            participant.mark_as_read() # zeros unread_count + sets last_read_at
+            participant.mark_as_read()  # zeros unread_count + sets last_read_at
             db.session.commit()
             try:
                 socketio = current_app.extensions.get('socketio')
@@ -431,7 +437,6 @@ def mark_conversation_read(conversation_id: int) -> Any:
         current_app.logger.error(f"Error in mark_conversation_read: {error}", exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500
 
-
 # ============================================================================
 # SECTION 8: GET READ STATUS FOR A MESSAGE
 # ============================================================================
@@ -442,7 +447,7 @@ def get_message_read_status(message_id: int) -> Any:
     """Get read status information for a specific message."""
     try:
         message = Message.query.get_or_404(message_id)
-
+        
         participant = ConversationParticipant.query.filter_by(
             conversation_id=message.conversation_id,
             user_id=current_user.id,
