@@ -16,7 +16,12 @@
   "userRole":  {{ user.role | tojson }},
   "isAdmin":   {{ is_admin | tojson }},
   "csrfToken": {{ csrf_token() | tojson }},
-  "chat": {{ chat | tojson }}
+  "chat":      {{ chat | tojson }},
+  "rooms": {
+    "personal": {{ personal_rooms | map(attribute='room_id') | list | tojson }},
+    "shared":   {{ shared_rooms   | map(attribute='room_id') | list | tojson }},
+    "guest":    {{ guest_rooms    | map(attribute='room_id') | list | tojson }}
+  }
 }
 </script>
 
@@ -36,6 +41,13 @@
       <a class="snav-item active" data-section="overview" href="#overview">
         <i class="fas fa-chart-pie" aria-hidden="true"></i>
         <span>Overview</span>
+      </a>
+      <a class="snav-item" data-section="rooms" href="#rooms">
+        <i class="fas fa-house" aria-hidden="true"></i>
+        <span>Rooms</span>
+        {% if total_rooms > 0 %}
+        <span class="nav-badge">{{ total_rooms }}</span>
+        {% endif %}
       </a>
       <a class="snav-item" data-section="devices" href="#devices">
         <i class="fas fa-plug-circle-bolt" aria-hidden="true"></i>
@@ -107,7 +119,7 @@
         {% endif %}
         <div class="u-meta">
           <span class="u-name">{{ user.username }}</span>
-          <span class="u-role role-{{ user.role.value }}">{{ user.role | title }}</span>
+          <span class="u-role role-{{ user.role }}">{{ user.role | title }}</span>
         </div>
       </div>
     </div>
@@ -119,6 +131,35 @@
     {# ─── OVERVIEW ─── #}
     <section class="db-section is-active" id="section-overview">
 
+      {# ── Admin overview strip (admins only) ── #}
+      {% if is_admin and admin_overview %}
+      <div class="admin-strip">
+        <i class="fas fa-shield-halved" aria-hidden="true"></i>
+        <span class="admin-strip__label">Admin view</span>
+        <div class="admin-strip__stats">
+          <span>
+            <strong>{{ admin_overview.total_rooms }}</strong> rooms
+          </span>
+          <span class="divider">·</span>
+          <span>
+            <strong>{{ admin_overview.active_members }}</strong> active members
+          </span>
+          <span class="divider">·</span>
+          <span>
+            <strong>{{ admin_overview.active_guests }}</strong> guests
+          </span>
+          <span class="divider">·</span>
+          <span>
+            <strong>{{ admin_overview.vacant_slots }}</strong> vacant
+          </span>
+        </div>
+        <a href="{{ url_for('admin.index') }}" class="admin-strip__link">
+          Open admin panel <i class="fas fa-arrow-right" aria-hidden="true"></i>
+        </a>
+      </div>
+      {% endif %}
+
+      {# ── Stat cards ── #}
       <div class="stat-grid">
         <div class="stat-card sc--blue">
           <div class="sc-icon"><i class="fas fa-plug-circle-bolt" aria-hidden="true"></i></div>
@@ -131,6 +172,7 @@
         <div class="stat-card sc--teal">
           <div class="sc-icon"><i class="fas fa-house" aria-hidden="true"></i></div>
           <div class="sc-body">
+            <div class="sc-val">{{ total_rooms }}</div>
             <div class="sc-lbl">Rooms</div>
           </div>
         </div>
@@ -151,15 +193,218 @@
         </div>
       </div>
 
+      {# ── Quick rooms preview (first 4 rooms only) ── #}
       <div class="section-hd">
         <h2><i class="fas fa-house-signal" aria-hidden="true"></i> Your Rooms</h2>
-        <button class="hd-link" data-goto="devices">
-          All Devices <i class="fas fa-arrow-right" aria-hidden="true"></i>
+        <button class="hd-link" data-section="rooms">
+          All Rooms <i class="fas fa-arrow-right" aria-hidden="true"></i>
         </button>
       </div>
+
+      {% set preview_rooms = (personal_rooms + shared_rooms)[:4] %}
+      {% if preview_rooms %}
       <div class="room-grid" id="overviewRooms">
-        {# Rooms will be populated by devices.js #}
+        {% for rm in preview_rooms %}
+        <div class="room-card room-card--{{ rm.room_type.value }}"
+             data-room-id="{{ rm.room_id }}">
+          <div class="room-card__icon">
+            {% if rm.room_type.value == 'personal' %}
+              <i class="fas fa-user" aria-hidden="true"></i>
+            {% elif rm.room_type.value == 'shared' %}
+              <i class="fas fa-users" aria-hidden="true"></i>
+            {% else %}
+              <i class="fas fa-door-open" aria-hidden="true"></i>
+            {% endif %}
+          </div>
+          <div class="room-card__body">
+            <div class="room-card__name">{{ rm.room.name }}</div>
+            <div class="room-card__meta">
+              <span class="room-type-badge room-type-badge--{{ rm.room_type.value }}">
+                {{ rm.room_type.value | capitalize }}
+              </span>
+              {% if rm.can_control %}
+              <span class="room-perm" title="You can control this room">
+                <i class="fas fa-sliders" aria-hidden="true"></i>
+              </span>
+              {% endif %}
+              {% if rm.can_manage %}
+              <span class="room-perm" title="You can manage this room">
+                <i class="fas fa-gear" aria-hidden="true"></i>
+              </span>
+              {% endif %}
+            </div>
+          </div>
+          <div class="room-card__status room-card__status--active">
+            <span class="status-dot status-dot--active"></span>
+            Active
+          </div>
+        </div>
+        {% endfor %}
       </div>
+      {% else %}
+      <div class="empty-state">
+        <i class="fas fa-house-circle-xmark" aria-hidden="true"></i>
+        <p>No rooms assigned yet.</p>
+        {% if is_admin %}
+        <a href="{{ url_for('roomallocationview.index') }}" class="hd-link">
+          Allocate a room <i class="fas fa-arrow-right" aria-hidden="true"></i>
+        </a>
+        {% endif %}
+      </div>
+      {% endif %}
+
+    </section>
+
+    {# ─── ROOMS ─── #}
+    <section class="db-section" id="section-rooms">
+      <div class="section-hd">
+        <h2><i class="fas fa-house" aria-hidden="true"></i> Rooms</h2>
+      </div>
+
+      {# ── Personal rooms ── #}
+      {% if personal_rooms %}
+      <div class="room-group">
+        <div class="room-group__hd">
+          <i class="fas fa-user" aria-hidden="true"></i>
+          <span>Personal Rooms</span>
+          <span class="room-group__count">{{ personal_rooms | length }}</span>
+        </div>
+        <div class="room-grid">
+          {% for rm in personal_rooms %}
+          <div class="room-card room-card--personal" data-room-id="{{ rm.room_id }}">
+            <div class="room-card__icon">
+              <i class="fas fa-user" aria-hidden="true"></i>
+            </div>
+            <div class="room-card__body">
+              <div class="room-card__name">{{ rm.room.name }}</div>
+              <div class="room-card__meta">
+                <span class="room-type-badge room-type-badge--personal">Personal</span>
+                {% if rm.can_view %}
+                <span class="room-perm" title="View access">
+                  <i class="fas fa-eye" aria-hidden="true"></i>
+                </span>
+                {% endif %}
+                {% if rm.can_control %}
+                <span class="room-perm" title="Control access">
+                  <i class="fas fa-sliders" aria-hidden="true"></i>
+                </span>
+                {% endif %}
+                {% if rm.can_manage %}
+                <span class="room-perm" title="Manage access">
+                  <i class="fas fa-gear" aria-hidden="true"></i>
+                </span>
+                {% endif %}
+              </div>
+            </div>
+            <div class="room-card__status room-card__status--active">
+              <span class="status-dot status-dot--active"></span>
+              Active
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      {# ── Shared rooms ── #}
+      {% if shared_rooms %}
+      <div class="room-group">
+        <div class="room-group__hd">
+          <i class="fas fa-users" aria-hidden="true"></i>
+          <span>Shared Rooms</span>
+          <span class="room-group__count">{{ shared_rooms | length }}</span>
+        </div>
+        <div class="room-grid">
+          {% for rm in shared_rooms %}
+          <div class="room-card room-card--shared" data-room-id="{{ rm.room_id }}">
+            <div class="room-card__icon">
+              <i class="fas fa-users" aria-hidden="true"></i>
+            </div>
+            <div class="room-card__body">
+              <div class="room-card__name">{{ rm.room.name }}</div>
+              <div class="room-card__meta">
+                <span class="room-type-badge room-type-badge--shared">Shared</span>
+                {% if rm.can_view %}
+                <span class="room-perm" title="View access">
+                  <i class="fas fa-eye" aria-hidden="true"></i>
+                </span>
+                {% endif %}
+                {% if rm.can_control %}
+                <span class="room-perm" title="Control access">
+                  <i class="fas fa-sliders" aria-hidden="true"></i>
+                </span>
+                {% endif %}
+              </div>
+            </div>
+            <div class="room-card__status room-card__status--active">
+              <span class="status-dot status-dot--active"></span>
+              Active
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      {# ── Guest rooms (guest-role users only) ── #}
+      {% if guest_rooms %}
+      <div class="room-group">
+        <div class="room-group__hd">
+          <i class="fas fa-user-clock" aria-hidden="true"></i>
+          <span>Guest Access</span>
+          <span class="room-group__count">{{ guest_rooms | length }}</span>
+        </div>
+        <div class="room-grid">
+          {% for gr in guest_rooms %}
+          {% set accessible = gr.is_currently_accessible() %}
+          <div class="room-card room-card--guest {% if not accessible %}room-card--restricted{% endif %}"
+               data-room-id="{{ gr.room_id }}">
+            <div class="room-card__icon">
+              <i class="fas fa-user-clock" aria-hidden="true"></i>
+            </div>
+            <div class="room-card__body">
+              <div class="room-card__name">{{ gr.room.name }}</div>
+              <div class="room-card__meta">
+                <span class="room-type-badge room-type-badge--guest">Guest</span>
+                {% if gr.can_view %}
+                <span class="room-perm" title="View access">
+                  <i class="fas fa-eye" aria-hidden="true"></i>
+                </span>
+                {% endif %}
+                {% if gr.can_control %}
+                <span class="room-perm" title="Control access">
+                  <i class="fas fa-sliders" aria-hidden="true"></i>
+                </span>
+                {% endif %}
+              </div>
+              <div class="room-card__expiry">
+                <i class="fas fa-clock" aria-hidden="true"></i>
+                Expires {{ gr.expires_at.strftime('%d %b %Y %H:%M') }}
+              </div>
+            </div>
+            <div class="room-card__status {% if accessible %}room-card__status--active{% else %}room-card__status--restricted{% endif %}">
+              <span class="status-dot {% if accessible %}status-dot--active{% else %}status-dot--warning{% endif %}"></span>
+              {{ 'Accessible' if accessible else 'Outside window' }}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      {# ── Empty state ── #}
+      {% if not personal_rooms and not shared_rooms and not guest_rooms %}
+      <div class="empty-state">
+        <i class="fas fa-house-circle-xmark" aria-hidden="true"></i>
+        <p>No rooms assigned to your account yet.</p>
+        {% if is_admin %}
+        <a href="{{ url_for('roomallocationview.index') }}" class="hd-link">
+          Allocate a room <i class="fas fa-arrow-right" aria-hidden="true"></i>
+        </a>
+        {% endif %}
+      </div>
+      {% endif %}
+
     </section>
 
     {# ─── DEVICES ─── #}
@@ -204,7 +449,6 @@
           <input type="search" class="search-inp" id="convSearch"
                  placeholder="Search…" aria-label="Search conversations">
           <div class="conv-list" id="convList" role="list">
-            {# Seeded server-side so the list is visible before JS runs #}
             {% for conv in chat.conversations %}
             <div class="conv-item {% if conv.unread_count %}conv-item--unread{% endif %}"
                  data-conv-id="{{ conv.conversation_id }}"
@@ -256,15 +500,12 @@
               </div>
             </div>
             <div class="chat-msgs" id="chatMsgs" role="log" aria-live="polite" aria-label="Messages"></div>
-            {# ── TYPING INDICATOR ── #}
             <div class="chat-typing" id="typingIndicator" style="display: none;">
-                <div class="typing-dots">
-                    <span></span><span></span><span></span>
-                </div>
-                <span class="typing-name" id="typingText">Someone is typing</span>
+              <div class="typing-dots">
+                <span></span><span></span><span></span>
+              </div>
+              <span class="typing-name" id="typingText">Someone is typing</span>
             </div>
-
-            <form class="chat-compose" id="chatCompose" autocomplete="off">
             <form class="chat-compose" id="chatCompose" autocomplete="off">
               <textarea class="chat-inp" id="chatInput" rows="1"
                         placeholder="Type a message…" maxlength="10000"
@@ -278,7 +519,6 @@
 
       </div>
 
-      {# New conversation modal #}
       <div class="modal-backdrop" id="newConvModal" hidden role="dialog" aria-modal="true" aria-labelledby="newConvTitle">
         <div class="modal-box">
           <div class="modal-hd">

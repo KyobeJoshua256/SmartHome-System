@@ -1194,6 +1194,25 @@ class RoomMemberAdminView(AuditMixin, AdminAccessMixin, ModelView):
     form = RoomMemberForm
     form_columns = ["room_id", "user_id", "room_type", "status", "can_view", "can_control", "can_manage"]
 
+
+    def _fmt_room(self, ctx, model, name) -> Markup:
+        if model.room:
+            return Markup(
+                f'<a href="/admin/room/details/?id={model.room_id}" '
+                f'title="View room">'
+                f'<i class="fas fa-door-open"></i> {escape(model.room.name)}</a>'
+            )
+        return Markup('<span class="text-muted">—</span>')
+
+    def _fmt_user(self, ctx, model, name) -> Markup:
+        if model.user:
+            return Markup(
+                f'<a href="/admin/user/details/?id={model.user_id}" '
+                f'title="View member">'
+                f'<i class="fas fa-user"></i> {escape(model.user.username)}</a>'
+            )
+        return Markup('<span class="text-muted text-italic">Vacant</span>')
+
     def _fmt_bool_col(self, ctx, model, name) -> Markup:
         return _fmt_bool(getattr(model, name, None))
 
@@ -1211,13 +1230,16 @@ class RoomMemberAdminView(AuditMixin, AdminAccessMixin, ModelView):
         )
 
     column_formatters = {
-        "can_view": _fmt_bool_col,
-        "can_control": _fmt_bool_col,
-        "can_manage": _fmt_bool_col,
-        "status": _fmt_status,
-        "vacated_at": _fmt_dt_col,
-        "created_at": _fmt_dt_col,
+    "room":        _fmt_room,
+    "user":        _fmt_user,
+    "can_view":    _fmt_bool_col,
+    "can_control": _fmt_bool_col,
+    "can_manage":  _fmt_bool_col,
+    "status":      _fmt_status,
+    "vacated_at":  _fmt_dt_col,
+    "created_at":  _fmt_dt_col,
     }
+
     column_formatters_detail = column_formatters
 
     def on_model_change(self, form, model, is_created: bool) -> None:
@@ -1299,6 +1321,24 @@ class GuestRoomAdminView(AuditMixin, AdminAccessMixin, ModelView):
         "can_view", "can_control", "status",
     ]
 
+    def _fmt_room(self, ctx, model, name) -> Markup:
+        if model.room:
+            return Markup(
+                f'<a href="/admin/room/details/?id={model.room_id}" '
+                f'title="View room">'
+                f'<i class="fas fa-door-open"></i> {escape(model.room.name)}</a>'
+            )
+        return Markup('<span class="text-muted">—</span>')
+
+    def _fmt_guest(self, ctx, model, name) -> Markup:
+        if model.guest:
+            return Markup(
+                f'<a href="/admin/user/details/?id={model.guest_id}" '
+                f'title="View guest">'
+                f'<i class="fas fa-user-clock"></i> {escape(model.guest.username)}</a>'
+            )
+        return Markup('<span class="text-muted">—</span>')
+
     def _fmt_bool_col(self, ctx, model, name) -> Markup:
         return _fmt_bool(getattr(model, name, None))
 
@@ -1334,14 +1374,17 @@ class GuestRoomAdminView(AuditMixin, AdminAccessMixin, ModelView):
         return formatted
 
     column_formatters = {
-        "can_view": _fmt_bool_col,
-        "can_control": _fmt_bool_col,
-        "status": _fmt_status,
-        "expires_at": _fmt_expires,
-        "created_at": _fmt_dt_col,
+    "room":       _fmt_room,
+    "guest":      _fmt_guest,
+    "can_view":   _fmt_bool_col,
+    "can_control": _fmt_bool_col,
+    "status":     _fmt_status,
+    "expires_at": _fmt_expires,
+    "created_at": _fmt_dt_col,
     }
-    column_formatters_detail = column_formatters
 
+    column_formatters_detail = column_formatters
+    
     def on_model_change(self, form, model, is_created: bool) -> None:
         """
         Convert valid_days from comma-separated string to list when saved
