@@ -1,0 +1,328 @@
+{% extends 'admin/base.html' %}
+
+{% block head_css %}
+{{ super() }}
+<style>
+  .op-layout {
+    display: grid;
+    grid-template-columns: 1fr 360px;
+    gap: 1.5rem;
+    align-items: start;
+  }
+  @media (max-width: 860px) { .op-layout { grid-template-columns: 1fr; } }
+
+  .op-card {
+    background: var(--card-bg, #1e2330);
+    border: 1px solid var(--border-color, #2e3450);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .op-card-header {
+    padding: .9rem 1.25rem;
+    border-bottom: 1px solid var(--border-color, #2e3450);
+    display: flex; align-items: center; gap: .6rem;
+    background: var(--table-head-bg, #161b27);
+  }
+  .op-card-header i { color: #a78bfa; }
+  .op-card-header h6 {
+    margin: 0; font-size: .85rem; font-weight: 600;
+    color: var(--text-primary, #e2e8f0);
+    text-transform: uppercase; letter-spacing: .05em;
+  }
+  .op-card-body { padding: 1.25rem; }
+
+  .field-group { margin-bottom: 1.1rem; }
+  .field-group:last-child { margin-bottom: 0; }
+
+  .field-label {
+    display: block; font-size: .75rem; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .05em;
+    color: var(--text-muted, #8892a4); margin-bottom: .4rem;
+  }
+  .field-hint { font-size: .73rem; color: var(--text-muted, #8892a4); margin-top: .3rem; line-height: 1.4; }
+
+  .form-control {
+    width: 100%;
+    background: var(--input-bg, #161b27);
+    border: 1px solid var(--border-color, #2e3450);
+    border-radius: 6px; padding: .55rem .8rem;
+    color: var(--text-primary, #e2e8f0); font-size: .85rem;
+    transition: border-color .15s; appearance: none; -webkit-appearance: none; box-sizing: border-box;
+  }
+  .form-control:focus { outline: none; border-color: #a78bfa; box-shadow: 0 0 0 3px rgba(167,139,250,.12); }
+  .form-control option { background: #1e2330; }
+
+  .time-row { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
+
+  .day-pills { display: flex; gap: .4rem; flex-wrap: wrap; margin-top: .4rem; }
+  .day-pill {
+    padding: .3rem .7rem; border-radius: 20px; font-size: .75rem; font-weight: 600;
+    border: 1px solid var(--border-color, #2e3450); background: var(--input-bg, #161b27);
+    color: var(--text-muted, #8892a4); cursor: pointer; transition: all .15s; user-select: none;
+  }
+  .day-pill.active { border-color: #a78bfa; background: rgba(167,139,250,.12); color: #a78bfa; }
+
+  .perm-row { display: flex; gap: .75rem; flex-wrap: wrap; }
+  .perm-toggle {
+    display: flex; align-items: center; gap: .45rem;
+    background: var(--input-bg, #161b27); border: 1px solid var(--border-color, #2e3450);
+    border-radius: 6px; padding: .45rem .85rem; cursor: pointer;
+    transition: border-color .15s, background .15s; user-select: none;
+  }
+  .perm-toggle input[type=checkbox] { display: none; }
+  .perm-toggle .perm-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border-color, #2e3450); transition: background .15s; }
+  .perm-toggle.checked { border-color: #a78bfa; background: rgba(167,139,250,.08); }
+  .perm-toggle.checked .perm-dot { background: #a78bfa; }
+  .perm-toggle span { font-size: .8rem; color: var(--text-primary, #e2e8f0); }
+
+  .field-section {
+    font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em;
+    color: var(--text-muted, #8892a4); margin: 1.4rem 0 .85rem;
+    display: flex; align-items: center; gap: .5rem;
+  }
+  .field-section::after { content: ''; flex: 1; height: 1px; background: var(--border-color, #2e3450); }
+
+  .btn-submit {
+    display: inline-flex; align-items: center; gap: .45rem;
+    background: #7c3aed; color: #fff; border: none; border-radius: 7px;
+    padding: .6rem 1.4rem; font-size: .85rem; font-weight: 600; cursor: pointer;
+    transition: background .15s; width: 100%; justify-content: center; margin-top: .5rem;
+  }
+  .btn-submit:hover { background: #6d28d9; }
+
+  .field-error { font-size: .75rem; color: #f87171; margin-top: .3rem; }
+
+  .info-item { display: flex; gap: .65rem; padding: .75rem 0; border-bottom: 1px solid var(--border-color, #2e3450); font-size: .82rem; }
+  .info-item:last-child { border-bottom: none; padding-bottom: 0; }
+  .info-item i { color: #a78bfa; margin-top: .1rem; flex-shrink: 0; }
+  .info-item p { margin: 0; color: var(--text-muted, #8892a4); line-height: 1.5; }
+  .info-item strong { color: var(--text-primary, #e2e8f0); display: block; margin-bottom: .1rem; }
+
+  .warn-box {
+    background: rgba(251,191,36,.07); border: 1px solid rgba(251,191,36,.25);
+    border-left: 3px solid #fbbf24; border-radius: 7px; padding: .8rem 1rem;
+    font-size: .8rem; color: var(--text-muted, #8892a4); line-height: 1.5; margin-top: 1rem;
+  }
+  .warn-box i { color: #fbbf24; margin-right: .35rem; }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="container-fluid" style="padding: 1.5rem 1.75rem;">
+
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;flex-wrap:wrap;gap:.75rem;">
+    <div>
+      <h4 style="margin:0;font-weight:700;color:var(--text-primary,#e2e8f0);">
+        <i class="fas fa-user-tag" style="color:#a78bfa;margin-right:.5rem;"></i>
+        Allocate Room to Guest
+      </h4>
+      <div style="font-size:.8rem;color:var(--text-muted,#8892a4);margin-top:.2rem;">
+        Grant time-bounded room access to a guest user
+      </div>
+    </div>
+    <a href="{{ url_for('roommanagementdashboard.index') }}"
+       style="display:inline-flex;align-items:center;gap:.4rem;font-size:.82rem;color:var(--text-muted,#8892a4);text-decoration:none;">
+      <i class="fas fa-arrow-left"></i> Back to Room's Dashboard
+    </a>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="alert alert-{{ 'danger' if category == 'error' else category }}"
+             style="border-radius:8px;margin-bottom:1rem;">{{ message }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <div class="op-layout">
+
+    <div class="op-card">
+      <div class="op-card-header">
+        <i class="fas fa-user-clock"></i>
+        <h6>Guest Allocation Details</h6>
+      </div>
+      <div class="op-card-body">
+        <form method="POST" id="guest-alloc-form">
+          {{ form.hidden_tag() }}
+
+          <div class="field-group">
+            <label class="field-label" for="{{ form.room_id.id }}">
+              <i class="fas fa-door-open" style="margin-right:.3rem;"></i>{{ form.room_id.label.text }}
+            </label>
+            {{ form.room_id(class="form-control") }}
+            <div class="field-hint">{{ form.room_id.description }}</div>
+            {% for e in form.room_id.errors %}
+              <div class="field-error"><i class="fas fa-exclamation-circle"></i> {{ e }}</div>
+            {% endfor %}
+          </div>
+
+          <div class="field-group">
+            <label class="field-label" for="{{ form.guest_id.id }}">
+              <i class="fas fa-user-tag" style="margin-right:.3rem;"></i>{{ form.guest_id.label.text }}
+            </label>
+            {{ form.guest_id(class="form-control") }}
+            {% for e in form.guest_id.errors %}
+              <div class="field-error"><i class="fas fa-exclamation-circle"></i> {{ e }}</div>
+            {% endfor %}
+          </div>
+
+          <div class="field-group">
+            <label class="field-label">
+              <i class="fas fa-user-shield" style="margin-right:.3rem;"></i>Invited By
+            </label>
+            <div style="padding:.55rem .8rem;background:var(--input-bg,#161b27);
+                        border:1px solid var(--border-color,#2e3450);border-radius:6px;
+                        font-size:.85rem;color:var(--text-muted,#8892a4);">
+              <i class="fas fa-lock" style="margin-right:.35rem;font-size:.72rem;"></i>
+              {{ current_user.username }}
+              <span style="font-size:.72rem;margin-left:.4rem;">(you — derived automatically)</span>
+            </div>
+          </div>
+
+          <div class="field-section"><i class="fas fa-clock"></i> Expiry</div>
+
+          <div class="field-group">
+            <label class="field-label" for="{{ form.expires_at.id }}">
+              <i class="fas fa-calendar-times" style="margin-right:.3rem;"></i>{{ form.expires_at.label.text }}
+            </label>
+            {{ form.expires_at(class="form-control", placeholder="YYYY-MM-DD HH:MM:SS") }}
+            <div class="field-hint">{{ form.expires_at.description }}</div>
+            {% for e in form.expires_at.errors %}
+              <div class="field-error"><i class="fas fa-exclamation-circle"></i> {{ e }}</div>
+            {% endfor %}
+          </div>
+
+          <div class="field-section"><i class="fas fa-sun"></i> Daily Access Window <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optional)</span></div>
+
+          <div class="time-row">
+            <div class="field-group">
+              <label class="field-label" for="{{ form.valid_from.id }}">
+                <i class="fas fa-play-circle" style="margin-right:.3rem;"></i>{{ form.valid_from.label.text }}
+              </label>
+              {{ form.valid_from(class="form-control", placeholder="HH:MM:SS") }}
+              {% for e in form.valid_from.errors %}
+                <div class="field-error"><i class="fas fa-exclamation-circle"></i> {{ e }}</div>
+              {% endfor %}
+            </div>
+            <div class="field-group">
+              <label class="field-label" for="{{ form.valid_until.id }}">
+                <i class="fas fa-stop-circle" style="margin-right:.3rem;"></i>{{ form.valid_until.label.text }}
+              </label>
+              {{ form.valid_until(class="form-control", placeholder="HH:MM:SS") }}
+              {% for e in form.valid_until.errors %}
+                <div class="field-error"><i class="fas fa-exclamation-circle"></i> {{ e }}</div>
+              {% endfor %}
+            </div>
+          </div>
+
+          <div class="field-group">
+            <label class="field-label">
+              <i class="fas fa-calendar-week" style="margin-right:.3rem;"></i>{{ form.valid_days.label.text }}
+            </label>
+            <div class="day-pills" id="day-pills">
+              {% for day in ['mon','tue','wed','thu','fri','sat','sun'] %}
+                <span class="day-pill" data-day="{{ day }}">{{ day|capitalize }}</span>
+              {% endfor %}
+            </div>
+            {{ form.valid_days(id="valid_days_input", style="display:none;") }}
+            <div class="field-hint">{{ form.valid_days.description }}</div>
+            {% for e in form.valid_days.errors %}
+              <div class="field-error"><i class="fas fa-exclamation-circle"></i> {{ e }}</div>
+            {% endfor %}
+          </div>
+
+          <div class="field-section"><i class="fas fa-shield-alt"></i> Permissions</div>
+
+          <div class="field-group">
+            <div class="perm-row">
+              <label class="perm-toggle" id="toggle-can_view">
+                {{ form.can_view() }}
+                <span class="perm-dot"></span><span>Can View</span>
+              </label>
+              <label class="perm-toggle" id="toggle-can_control">
+                {{ form.can_control() }}
+                <span class="perm-dot"></span><span>Can Control</span>
+              </label>
+            </div>
+            <div class="field-hint">Guests never receive Can Manage — enforced by the system.</div>
+          </div>
+
+          <button type="submit" class="btn-submit">
+            <i class="fas fa-check-circle"></i> Grant Guest Access
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <div>
+      <div class="op-card">
+        <div class="op-card-header">
+          <i class="fas fa-info-circle"></i><h6>How This Works</h6>
+        </div>
+        <div class="op-card-body">
+          <div class="info-item">
+            <i class="fas fa-calendar-times"></i>
+            <p><strong>Hard expiry</strong>Scheduler checks every 5 minutes and expires allocations automatically.</p>
+          </div>
+          <div class="info-item">
+            <i class="fas fa-moon"></i>
+            <p><strong>Midnight windows</strong>Windows crossing midnight (e.g. 22:00–02:00) are fully supported.</p>
+          </div>
+          <div class="info-item">
+            <i class="fas fa-users"></i>
+            <p><strong>Multiple guests</strong>Several guests can share the same room — each has an independent expiry.</p>
+          </div>
+          <div class="info-item">
+            <i class="fas fa-user-shield"></i>
+            <p><strong>Invited by</strong>Always the logged-in admin — cannot be spoofed from this form.</p>
+          </div>
+        </div>
+      </div>
+      <div class="warn-box">
+        <i class="fas fa-exclamation-triangle"></i>
+        <strong style="color:#fbbf24;">Expiry is in Kampala time (UTC+3).</strong>
+        Enter the datetime in your local timezone. The scheduler uses Africa/Kampala.
+      </div>
+      <div style="margin-top:1rem;">
+        <a href="{{ url_for('roomallocationview.index') }}"
+           style="display:flex;align-items:center;gap:.5rem;padding:.75rem 1rem;
+                  background:var(--card-bg,#1e2330);border:1px solid var(--border-color,#2e3450);
+                  border-radius:8px;text-decoration:none;color:var(--text-muted,#8892a4);font-size:.82rem;">
+          <i class="fas fa-user-plus" style="color:#60a5fa;"></i>
+          <span>Allocate a member instead</span>
+          <i class="fas fa-arrow-right" style="margin-left:auto;"></i>
+        </a>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  document.querySelectorAll('.perm-toggle').forEach(label => {
+    const cb = label.querySelector('input[type=checkbox]');
+    function sync() { label.classList.toggle('checked', cb.checked); }
+    cb.addEventListener('change', sync);
+    sync();
+  });
+
+  const hiddenInput = document.getElementById('valid_days_input');
+  const pills = document.querySelectorAll('.day-pill');
+  let selected = new Set();
+
+  if (hiddenInput.value) {
+    hiddenInput.value.split(',').forEach(d => { if (d.trim()) selected.add(d.trim()); });
+    pills.forEach(p => { if (selected.has(p.dataset.day)) p.classList.add('active'); });
+  }
+
+  pills.forEach(pill => {
+    pill.addEventListener('click', () => {
+      const day = pill.dataset.day;
+      if (selected.has(day)) { selected.delete(day); pill.classList.remove('active'); }
+      else { selected.add(day); pill.classList.add('active'); }
+      hiddenInput.value = [...selected].join(',');
+    });
+  });
+</script>
+{% endblock %}

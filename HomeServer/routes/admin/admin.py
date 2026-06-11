@@ -1173,7 +1173,7 @@ class RoomMemberAdminView(AuditMixin, AdminAccessMixin, ModelView):
     can_export = True
     can_create = True
     can_edit = True
-    can_delete = False   # Use release_room workflow instead of hard delete
+    can_delete = True   
     details_modal = True
     page_size = 50
 
@@ -1272,7 +1272,7 @@ class GuestRoomAdminView(AuditMixin, AdminAccessMixin, ModelView):
     can_export = True
     can_create = True
     can_edit = True
-    can_delete = False   # Expire via Dashboard instead of hard delete
+    can_delete = True  
     details_modal = True
     page_size = 50
 
@@ -1408,7 +1408,7 @@ class RoomAllocationView(AdminAccessMixin, BaseView):
                 logger.exception("Failed to allocate room to member")
                 flash(f"Error allocating room: {exc}", "error")
 
-        return self.render("admin/allocate_room.html", form=form)
+        return self.render("admin/rooms/room_allocation.html", form=form)
 
 
 # ---------------------------------------------------------------------------
@@ -1461,7 +1461,7 @@ class GuestAllocationView(AdminAccessMixin, BaseView):
                 logger.exception("Failed to allocate room to guest")
                 flash(f"Error allocating room to guest: {exc}", "error")
 
-        return self.render("admin/allocate_guest.html", form=form)
+        return self.render("admin/rooms/guest_allocation.html", form=form)
 
 
 # ---------------------------------------------------------------------------
@@ -1540,7 +1540,7 @@ class RoomManagementDashboard(AdminAccessMixin, BaseView):
         guest = database.session.get(GuestRoom, guest_id)
         if guest is None:
             flash("Guest allocation not found.", "error")
-            return redirect(url_for("roommanagementdashboard.index"))
+            return redirect(url_for("roommember.index_view"))
 
         guest.expire()
         database.session.commit()
@@ -1550,7 +1550,7 @@ class RoomManagementDashboard(AdminAccessMixin, BaseView):
             getattr(current_user, "username", "unknown"),
         )
         flash(f"Guest allocation for room '{guest.room.name}' has been expired.", "success")
-        return redirect(url_for("roommanagementdashboard.index"))
+        return redirect(url_for("roommember.index_view"))
 
     @expose("/release-room/<int:member_id>")
     def release_room(self, member_id):
@@ -1559,11 +1559,11 @@ class RoomManagementDashboard(AdminAccessMixin, BaseView):
         member = database.session.get(RoomMember, member_id)
         if member is None:
             flash("Room allocation not found.", "error")
-            return redirect(url_for("roommanagementdashboard.index"))
+            return redirect(url_for("roommember.index_view"))
 
         if not member.user_id:
             flash("This room is already vacant.", "warning")
-            return redirect(url_for("roommanagementdashboard.index"))
+            return redirect(url_for("roommember.index_view"))
 
         RoomService.release_member_room(member)
         database.session.commit()
@@ -1573,7 +1573,7 @@ class RoomManagementDashboard(AdminAccessMixin, BaseView):
             getattr(current_user, "username", "unknown"),
         )
         flash(f"Room '{member.room.name}' has been released back to the vacant pool.", "success")
-        return redirect(url_for("roommanagementdashboard.index"))
+        return redirect(url_for("roommember.index_view"))
 
 
 # ---------------------------------------------------------------------------
@@ -1679,7 +1679,7 @@ class BulkRoomOperationView(AdminAccessMixin, BaseView):
 
             return redirect(url_for("bulkroomoperationview.index"))
 
-        return self.render("admin/bulk_room_ops.html", form=form)
+        return self.render("admin/rooms/bulk_room_Operations.html", form=form)
 
 
 # =============================================================================

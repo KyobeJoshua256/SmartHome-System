@@ -1,0 +1,280 @@
+{% extends 'admin/base.html' %}
+
+{% block head_css %}
+{{ super() }}
+<style>
+  .op-layout {
+    display: grid;
+    grid-template-columns: 1fr 360px;
+    gap: 1.5rem;
+    align-items: start;
+  }
+  @media (max-width: 860px) { .op-layout { grid-template-columns: 1fr; } }
+
+  .op-card {
+    background: var(--card-bg, #1e2330);
+    border: 1px solid var(--border-color, #2e3450);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .op-card-header {
+    padding: .9rem 1.25rem;
+    border-bottom: 1px solid var(--border-color, #2e3450);
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    background: var(--table-head-bg, #161b27);
+  }
+  .op-card-header i { color: #60a5fa; }
+  .op-card-header h6 {
+    margin: 0;
+    font-size: .85rem;
+    font-weight: 600;
+    color: var(--text-primary, #e2e8f0);
+    text-transform: uppercase;
+    letter-spacing: .05em;
+  }
+  .op-card-body { padding: 1.25rem; }
+
+  .field-group { margin-bottom: 1.1rem; }
+  .field-group:last-child { margin-bottom: 0; }
+
+  .field-label {
+    display: block;
+    font-size: .75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--text-muted, #8892a4);
+    margin-bottom: .4rem;
+  }
+  .field-hint {
+    font-size: .73rem;
+    color: var(--text-muted, #8892a4);
+    margin-top: .3rem;
+    line-height: 1.4;
+  }
+  .form-control {
+    width: 100%;
+    background: var(--input-bg, #161b27);
+    border: 1px solid var(--border-color, #2e3450);
+    border-radius: 6px;
+    padding: .55rem .8rem;
+    color: var(--text-primary, #e2e8f0);
+    font-size: .85rem;
+    transition: border-color .15s;
+    appearance: none;
+    -webkit-appearance: none;
+    box-sizing: border-box;
+  }
+  .form-control:focus {
+    outline: none;
+    border-color: #60a5fa;
+    box-shadow: 0 0 0 3px rgba(96,165,250,.12);
+  }
+  .form-control option { background: #1e2330; }
+
+  .perm-row { display: flex; gap: .75rem; flex-wrap: wrap; }
+  .perm-toggle {
+    display: flex;
+    align-items: center;
+    gap: .45rem;
+    background: var(--input-bg, #161b27);
+    border: 1px solid var(--border-color, #2e3450);
+    border-radius: 6px;
+    padding: .45rem .85rem;
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+    user-select: none;
+  }
+  .perm-toggle input[type=checkbox] { display: none; }
+  .perm-toggle .perm-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--border-color, #2e3450);
+    transition: background .15s;
+  }
+  .perm-toggle.checked { border-color: #60a5fa; background: rgba(96,165,250,.08); }
+  .perm-toggle.checked .perm-dot { background: #60a5fa; }
+  .perm-toggle span { font-size: .8rem; color: var(--text-primary, #e2e8f0); }
+
+  .btn-submit {
+    display: inline-flex;
+    align-items: center;
+    gap: .45rem;
+    background: #3b82f6;
+    color: #fff;
+    border: none;
+    border-radius: 7px;
+    padding: .6rem 1.4rem;
+    font-size: .85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .15s;
+    width: 100%;
+    justify-content: center;
+    margin-top: .5rem;
+  }
+  .btn-submit:hover { background: #2563eb; }
+
+  .field-error { font-size: .75rem; color: #f87171; margin-top: .3rem; }
+
+  .info-item {
+    display: flex;
+    gap: .65rem;
+    padding: .75rem 0;
+    border-bottom: 1px solid var(--border-color, #2e3450);
+    font-size: .82rem;
+  }
+  .info-item:last-child { border-bottom: none; padding-bottom: 0; }
+  .info-item i { color: #60a5fa; margin-top: .1rem; flex-shrink: 0; }
+  .info-item p { margin: 0; color: var(--text-muted, #8892a4); line-height: 1.5; }
+  .info-item strong { color: var(--text-primary, #e2e8f0); display: block; margin-bottom: .1rem; }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="container-fluid" style="padding: 1.5rem 1.75rem;">
+
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;flex-wrap:wrap;gap:.75rem;">
+    <div>
+      <h4 style="margin:0;font-weight:700;color:var(--text-primary,#e2e8f0);">
+        <i class="fas fa-user-plus" style="color:#60a5fa;margin-right:.5rem;"></i>
+        Allocate Room to Member
+      </h4>
+      <div style="font-size:.8rem;color:var(--text-muted,#8892a4);margin-top:.2rem;">
+        Assign a vacant room slot to a household member
+      </div>
+    </div>
+    <a href="{{ url_for('roommanagementdashboard.index') }}"
+       style="display:inline-flex;align-items:center;gap:.4rem;font-size:.82rem;color:var(--text-muted,#8892a4);text-decoration:none;">
+      <i class="fas fa-arrow-left"></i> Back to Room's Dashboard
+    </a>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="alert alert-{{ 'danger' if category == 'error' else category }}"
+             style="border-radius:8px;margin-bottom:1rem;">{{ message }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <div class="op-layout">
+
+    <div class="op-card">
+      <div class="op-card-header">
+        <i class="fas fa-bed"></i>
+        <h6>Allocation Details</h6>
+      </div>
+      <div class="op-card-body">
+        <form method="POST">
+          {{ form.hidden_tag() }}
+
+          <div class="field-group">
+            <label class="field-label" for="{{ form.room_member_id.id }}">
+              <i class="fas fa-door-open" style="margin-right:.3rem;"></i>{{ form.room_member_id.label.text }}
+            </label>
+            {{ form.room_member_id(class="form-control") }}
+            <div class="field-hint">{{ form.room_member_id.description }}</div>
+            {% for e in form.room_member_id.errors %}
+              <div class="field-error"><i class="fas fa-exclamation-circle"></i> {{ e }}</div>
+            {% endfor %}
+          </div>
+
+          <div class="field-group">
+            <label class="field-label" for="{{ form.user_id.id }}">
+              <i class="fas fa-user" style="margin-right:.3rem;"></i>{{ form.user_id.label.text }}
+            </label>
+            {{ form.user_id(class="form-control") }}
+            {% for e in form.user_id.errors %}
+              <div class="field-error"><i class="fas fa-exclamation-circle"></i> {{ e }}</div>
+            {% endfor %}
+          </div>
+
+          <div class="field-group">
+            <label class="field-label" for="{{ form.room_type.id }}">
+              <i class="fas fa-tag" style="margin-right:.3rem;"></i>{{ form.room_type.label.text }}
+            </label>
+            {{ form.room_type(class="form-control") }}
+            {% for e in form.room_type.errors %}
+              <div class="field-error"><i class="fas fa-exclamation-circle"></i> {{ e }}</div>
+            {% endfor %}
+          </div>
+
+          <div class="field-group">
+            <label class="field-label">
+              <i class="fas fa-shield-alt" style="margin-right:.3rem;"></i>Permissions
+            </label>
+            <div class="perm-row">
+              <label class="perm-toggle" id="toggle-can_view">
+                {{ form.can_view() }}
+                <span class="perm-dot"></span><span>Can View</span>
+              </label>
+              <label class="perm-toggle" id="toggle-can_control">
+                {{ form.can_control() }}
+                <span class="perm-dot"></span><span>Can Control</span>
+              </label>
+              <label class="perm-toggle" id="toggle-can_manage">
+                {{ form.can_manage() }}
+                <span class="perm-dot"></span><span>Can Manage</span>
+              </label>
+            </div>
+            <div class="field-hint">Can Manage grants room settings access — admin-granted only.</div>
+          </div>
+
+          <button type="submit" class="btn-submit">
+            <i class="fas fa-check-circle"></i> Allocate Room
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <div>
+      <div class="op-card">
+        <div class="op-card-header">
+          <i class="fas fa-info-circle"></i><h6>How This Works</h6>
+        </div>
+        <div class="op-card-body">
+          <div class="info-item">
+            <i class="fas fa-recycle"></i>
+            <p><strong>Slot reuse</strong>Existing VACANT or INACTIVE rows are reused — device mappings are preserved.</p>
+          </div>
+          <div class="info-item">
+            <i class="fas fa-users"></i>
+            <p><strong>Shared rooms</strong>Multiple members can share the same room, each with independent permissions.</p>
+          </div>
+          <div class="info-item">
+            <i class="fas fa-shield-alt"></i>
+            <p><strong>Can Manage</strong>Grants device rename and room settings. Reserve for homeowners only.</p>
+          </div>
+          <div class="info-item">
+            <i class="fas fa-bolt"></i>
+            <p><strong>Immediate</strong>The member gains access as soon as you submit — no scheduler delay.</p>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:1rem;">
+        <a href="{{ url_for('guestallocationview.index') }}"
+           style="display:flex;align-items:center;gap:.5rem;padding:.75rem 1rem;
+                  background:var(--card-bg,#1e2330);border:1px solid var(--border-color,#2e3450);
+                  border-radius:8px;text-decoration:none;color:var(--text-muted,#8892a4);font-size:.82rem;">
+          <i class="fas fa-user-tag" style="color:#a78bfa;"></i>
+          <span>Allocate a guest instead</span>
+          <i class="fas fa-arrow-right" style="margin-left:auto;"></i>
+        </a>
+      </div>
+    </div>
+
+  </div>
+</div>
+<script>
+  document.querySelectorAll('.perm-toggle').forEach(label => {
+    const cb = label.querySelector('input[type=checkbox]');
+    function sync() { label.classList.toggle('checked', cb.checked); }
+    cb.addEventListener('change', sync);
+    sync();
+  });
+</script>
+{% endblock %}
