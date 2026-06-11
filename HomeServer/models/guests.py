@@ -41,7 +41,7 @@ class Guest(TimestampMixin, database.Model):
         SqlaEnum(GuestStatus, values_callable=lambda x: [e.value for e in x]),
         nullable=False,
         default=GuestStatus.EXPECTED,
-        index=True,
+        # index=True,  # REMOVED: Index is defined in __table_args__ below
     )
 
     room_id       = Column(Integer, ForeignKey("rooms.id"), nullable=True)
@@ -56,7 +56,7 @@ class Guest(TimestampMixin, database.Model):
     added_by = relationship("User", foreign_keys=[added_by_id], lazy="select")
 
     __table_args__ = (
-        Index("ix_guests_status", "status"),
+        Index("ix_guests_status", "status"),  # Index defined here only
     )
 
     # ── Validators ────────────────────────────────────────────────────────
@@ -101,7 +101,7 @@ class Guest(TimestampMixin, database.Model):
             "room_id":          self.room_id,
             "checked_in_at":    self.checked_in_at.isoformat()  if self.checked_in_at  else None,
             "checked_out_at":   self.checked_out_at.isoformat() if self.checked_out_at else None,
-            "expected_checkout":self.expected_checkout.isoformat() if self.expected_checkout else None,
+            "expected_checkout": self.expected_checkout.isoformat() if self.expected_checkout else None,
             "added_by_id":      self.added_by_id,
             "created_at":       self.created_at.isoformat() if self.created_at else None,
         }
