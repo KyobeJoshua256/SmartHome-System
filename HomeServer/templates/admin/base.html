@@ -140,12 +140,12 @@
     </a>
     <a href="{{ url_for('room_allocations.index_view') }}"
        class="nav-item {% if request.endpoint == 'room_allocations.index_view' %}active{% endif %}">
-        <i class="fas fa-bed"></i><span>Room Allocations</span>
+        <i class="fas fa-bed"></i><span>Room Allocation</span>
     </a>
 
     <a href="{{ url_for('guest_allocations.index_view') }}"
         class="nav-item {% if request.endpoint == 'guest_allocations.index_view' %}active{% endif %}">
-        <i class="fas fa-user-clock"></i><span>Guest Allocations</span>
+        <i class="fas fa-user-clock"></i><span>Guest Allocation</span>
     </a>
     <!-- Kept as .index for BaseViews -->
     <a href="{{ url_for('roommanagementdashboard.index') }}"
@@ -158,12 +158,12 @@
     <!-- Kept as .index for BaseViews -->
     <a href="{{ url_for('roomallocationview.index') }}"
        class="nav-item {% if request.endpoint == 'roomallocationview.index' %}active{% endif %}">
-        <i class="fas fa-user-plus"></i><span>Allocate to Member</span>
+        <i class="fas fa-user-plus"></i><span>Allocate a Member</span>
     </a>
 
    <a href="{{ url_for('guestallocationview.index') }}"
        class="nav-item {% if request.endpoint == 'guestallocationview.index' %}active{% endif %}">
-        <i class="fas fa-user-tag"></i><span>Allocate to Guest</span>
+        <i class="fas fa-user-tag"></i><span>Allocate a Guest</span>
     </a>
 
     <a href="{{ url_for('bulkroomoperationview.index') }}"
