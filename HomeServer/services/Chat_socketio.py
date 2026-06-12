@@ -2,7 +2,7 @@ from flask_login import current_user
 from flask_socketio import join_room, leave_room, emit
 
 from HomeServer.models.chats import ConversationParticipant
-from HomeServer.models.utils import now_utc
+from HomeServer.models.utils import now_kampala
 from HomeServer import database as db
 
 
@@ -26,7 +26,7 @@ def message_socket_events(socketio):
 
         try:
             current_user.is_online = True
-            current_user.last_seen = now_utc()
+            current_user.last_seen = now_kampala()
             db.session.commit()
         except Exception:
             db.session.rollback()
@@ -55,7 +55,7 @@ def message_socket_events(socketio):
         try:
             if not still_connected:
                 current_user.is_online = False
-            current_user.last_seen = now_utc()
+            current_user.last_seen = now_kampala()
             db.session.commit()
         except Exception:
             db.session.rollback()

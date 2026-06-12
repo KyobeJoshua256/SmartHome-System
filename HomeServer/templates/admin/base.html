@@ -4,7 +4,6 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    {# ── head_meta: Flask-Admin writes charset/viewport here ─────────────── #}
     {% block head_meta %}
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
@@ -19,19 +18,11 @@
         | EBS SmartHome
     {% endblock title %}</title>
 
-    {# ── head_css: Flask-Admin injects its own CSS here via super() ───────── #}
     {% block head_css %}
-    {# Flask-Admin vendor CSS (select2, datepicker, etc.) — loaded silently #}
-    <link href="{{ admin_static.url(filename='admin/css/bootstrap4/admin.css', v='1.1.1') }}"
-          rel="stylesheet">
-    {# Font Awesome 6 (overrides FA4 bundled by Flask-Admin) #}
-    <link rel="stylesheet"
-          href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link href="{{ admin_static.url(filename='admin/css/bootstrap4/admin.css', v='1.1.1') }}" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/crudAdmin.css') }}">
-    {# Your design system #}
-    <link rel="stylesheet"
-          href="{{ url_for('static', filename='css/baseAdmin.css') }}">
-    {# Per-view extra CSS (set extra_css on ModelView subclasses) #}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/baseAdmin.css') }}">
     {% if admin_view is defined and admin_view.extra_css %}
         {% for css_url in admin_view.extra_css %}
         <link href="{{ css_url }}" rel="stylesheet">
@@ -39,43 +30,32 @@
     {% endif %}
     {% endblock head_css %}
 
-    {# ── head: model/list.html calls super() here for form_css() ─────────── #}
     {% block head %}{% endblock %}
-    {# ── head_tail: additional head content from child templates ─────────── #}
     {% block head_tail %}{% endblock %}
 
     <style>
-        /* Flask-Admin bulk-action checkboxes must never be hidden */
         .action-checkbox-column,
         .action-checkbox,
         input.action-checkbox {
             display: table-cell !important;
             visibility: visible !important;
         }
-        /* ── CRUD content lives inside .content-wrapper ───────────────────── */
-        /* Scope Flask-Admin's Bootstrap4 table/form styles under our wrapper */
         .content-wrapper .table          { color: var(--text-primary); }
         .content-wrapper .table thead th { border-bottom-color: var(--border); color: var(--text-muted); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
         .content-wrapper .table td,
         .content-wrapper .table th       { border-color: var(--border); vertical-align: middle; }
         .content-wrapper .table-hover tbody tr:hover { background: rgba(255,255,255,.03); }
         .content-wrapper .table-bordered { border-color: var(--border); }
-
-        /* Nav tabs (List / Create / Export …) */
         .content-wrapper .nav-tabs       { border-bottom: 1px solid var(--border); margin-bottom: 20px; }
         .content-wrapper .nav-tabs .nav-link { color: var(--text-muted); border: none; padding: 8px 16px; font-size: 13px; border-radius: var(--radius-sm) var(--radius-sm) 0 0; }
         .content-wrapper .nav-tabs .nav-link.active,
         .content-wrapper .nav-tabs .nav-item.show .nav-link { color: var(--accent); background: var(--accent-dim); border-bottom: 2px solid var(--accent); }
         .content-wrapper .nav-tabs .nav-link:hover { color: var(--text-primary); background: rgba(255,255,255,.03); }
-
-        /* Forms */
         .content-wrapper .form-control   { background: var(--bg-elevated); border-color: var(--border); color: var(--text-primary); border-radius: var(--radius-sm); }
         .content-wrapper .form-control:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); background: var(--bg-elevated); color: var(--text-primary); }
         .content-wrapper label           { color: var(--text-secondary); font-size: 13px; font-weight: 500; }
         .content-wrapper .help-block,
         .content-wrapper .form-text      { color: var(--text-muted); font-size: 12px; }
-
-        /* Buttons */
         .content-wrapper .btn-primary    { background: var(--accent); border-color: var(--accent); color: #05070a; font-weight: 600; }
         .content-wrapper .btn-primary:hover { filter: brightness(1.12); }
         .content-wrapper .btn-danger     { background: var(--rose); border-color: var(--rose); color: #05070a; font-weight: 600; }
@@ -84,45 +64,38 @@
         .content-wrapper .btn-default:hover,
         .content-wrapper .btn-secondary:hover { border-color: var(--border-hover); color: var(--text-primary); background: rgba(255,255,255,.04); }
         .content-wrapper .btn-sm         { font-size: 12px; padding: 3px 10px; }
-
-        /* Pagination */
         .content-wrapper .pagination .page-link { background: var(--bg-elevated); border-color: var(--border); color: var(--text-secondary); }
         .content-wrapper .pagination .page-item.active .page-link { background: var(--accent); border-color: var(--accent); color: #05070a; }
         .content-wrapper .pagination .page-link:hover { background: var(--accent-dim); color: var(--accent); }
-
-        /* Alerts / validation */
         .content-wrapper .alert-danger   { background: var(--rose-dim); border-color: rgba(251,113,133,.25); color: var(--rose); }
         .content-wrapper .alert-success  { background: var(--emerald-dim); border-color: rgba(52,211,153,.25); color: var(--emerald); }
         .content-wrapper .alert-info     { background: var(--accent-dim); border-color: rgba(56,189,248,.25); color: var(--accent); }
         .content-wrapper .alert-warning  { background: var(--amber-dim); border-color: rgba(251,191,36,.25); color: var(--amber); }
-
-        /* Select2 dark theme */
         .select2-container--default .select2-selection--single,
         .select2-container--default .select2-selection--multiple { background: var(--bg-elevated) !important; border-color: var(--border) !important; color: var(--text-primary) !important; }
         .select2-dropdown { background: var(--bg-elevated); border-color: var(--border); }
         .select2-container--default .select2-results__option { color: var(--text-primary); }
         .select2-container--default .select2-results__option--highlighted { background: var(--accent-dim) !important; color: var(--accent) !important; }
         .select2-container--default .select2-selection__rendered { color: var(--text-primary) !important; }
-
-        /* Inline CRUD table wrapper card */
         .content-wrapper .card,
         .content-wrapper .panel         { background: var(--bg-elevated); border-color: var(--border); border-radius: var(--radius-md); }
         .content-wrapper .card-header,
         .content-wrapper .panel-heading { background: transparent; border-bottom-color: var(--border); color: var(--text-primary); }
+        .nav-menu { display: flex; flex-direction: column; gap: 4px; }
+        .nav-item { display: flex; align-items: center; gap: 12px; padding: 10px 16px; color: var(--text-secondary); text-decoration: none; border-radius: var(--radius-sm); transition: all 0.2s; }
+        .nav-item:hover { background: var(--accent-dim); color: var(--accent); }
+        .nav-item.active { background: var(--accent-dim); color: var(--accent); font-weight: 500; }
+        .nav-divider { height: 1px; background: var(--border); margin: 12px 0; }
+        .nav-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); padding: 8px 16px 4px; }
     </style>
 
     {% block head_css_extra %}{% endblock %}
 </head>
 <body>
 
-{# ============================================================================
-   page_body — Flask-Admin children can override this whole block.
-   We put our entire sidebar + main layout here and expose `body` inside it.
-   ============================================================================ #}
 {% block page_body %}
 <div class="app-layout">
 
-    {# ── SIDEBAR ─────────────────────────────────────────────────────────── #}
     <aside class="sidebar" id="sidebar">
         <div class="sidebar-header">
             <div class="logo-group">
@@ -134,103 +107,84 @@
             </div>
         </div>
 
-        {# ── nav-menu block: child templates can append items ──────────── #}
-        {% block navmenu %}
-        <nav class="nav-menu">
+            {% block navmenu %}
+<nav class="nav-menu">
+    <a href="{{ url_for('admin.index') }}"
+       class="nav-item {% if request.endpoint == 'admin.index' %}active{% endif %}">
+        <i class="fas fa-th-large"></i><span>Dashboard</span>
+    </a>
 
-            <a href="{{ url_for('admin.index') }}"
-               class="nav-item {% if request.endpoint == 'admin.index' %}active{% endif %}">
-                <i class="fas fa-th-large"></i><span>Dashboard</span>
-            </a>
+    <div class="nav-divider"></div>
+    <div class="nav-label">Identity &amp; Access</div>
+    <!-- Changed to .index_view for ModelViews -->
+    <a href="{{ url_for('users.index_view') }}"
+       class="nav-item {% if request.endpoint == 'users.index_view' %}active{% endif %}">
+        <i class="fas fa-users"></i><span>Users</span>
+    </a>
+    <a href="{{ url_for('otp_sessions.index_view') }}"
+       class="nav-item {% if request.endpoint == 'otp_sessions.index_view' %}active{% endif %}">
+        <i class="fas fa-key"></i><span>OTP Sessions</span>
+    </a>
 
-            {# ── Identity & Access ──────────────────────────────────────── #}
-            <div class="nav-divider"></div>
-            <div class="nav-label">Identity &amp; Access</div>
+    <!-- Guest Management Section -->
+     <a href="{{ url_for('guests_log.index_view') }}"
+   class="nav-item {% if request.endpoint == 'guests_log.index_view' %}active{% endif %}">
+    <i class="fas fa-id-badge"></i><span>Guests</span>
+</a>
+    <div class="nav-divider"></div>
+    <div class="nav-label">Room Management</div>
+    <!-- Changed to .index_view for ModelViews -->
+    <a href="{{ url_for('rooms.index_view') }}"
+       class="nav-item {% if request.endpoint == 'rooms.index_view' %}active{% endif %}">
+        <i class="fas fa-door-open"></i><span>Rooms</span>
+    </a>
+    <a href="{{ url_for('room_allocations.index_view') }}"
+       class="nav-item {% if request.endpoint == 'room_allocations.index_view' %}active{% endif %}">
+        <i class="fas fa-bed"></i><span>Room Allocations</span>
+    </a>
 
-            <a href="{{ url_for('user.index_view') }}"
-               class="nav-item {% if request.endpoint and request.endpoint.startswith('user.') %}active{% endif %}">
-                <i class="fas fa-users"></i><span>Users</span>
-            </a>
-            <a href="{{ url_for('otpsession.index_view') }}"
-               class="nav-item {% if request.endpoint and request.endpoint.startswith('otpsession.') %}active{% endif %}">
-                <i class="fas fa-shield-alt"></i><span>OTP Sessions</span>
-            </a>
-            {% block nav_identity %}{% endblock %}
+    <a href="{{ url_for('guest_allocations.index_view') }}"
+        class="nav-item {% if request.endpoint == 'guest_allocations.index_view' %}active{% endif %}">
+        <i class="fas fa-user-clock"></i><span>Guest Allocations</span>
+    </a>
+    <!-- Kept as .index for BaseViews -->
+    <a href="{{ url_for('roommanagementdashboard.index') }}"
+       class="nav-item {% if request.endpoint == 'roommanagementdashboard.index' %}active{% endif %}">
+        <i class="fas fa-chart-pie"></i><span>Room Dashboard</span>
+    </a>
 
-            {# ── Room management  & allocation ─────────────────────────────────────────── #}
-            <div class="nav-divider"></div>
-            <div class="nav-label">Room Management</div>
-                        
-                            {# Room Creation #}
-            <a href="{{ url_for('room.index_view')}}"
-            class="nav-item {% if request.endpoint and request.endpoint.startswith('room.') %}active{% endif %}">
-                <i class="fas fa-door-open"></i><span>Rooms</span>
-            </a>
-                        {# Room Allocation #}
-            <a href="{{ url_for('roommember.index_view')}}"
-            class="nav-item {% if request.endpoint and request.endpoint.startswith('roommember.') %}active{% endif %}">
-                <i class="fas fa-bed"></i><span>Room Allocations</span>
-            </a>
+    <div class="nav-divider"></div>
+    <div class="nav-label">Room Operations</div>
+    <!-- Kept as .index for BaseViews -->
+    <a href="{{ url_for('roomallocationview.index') }}"
+       class="nav-item {% if request.endpoint == 'roomallocationview.index' %}active{% endif %}">
+        <i class="fas fa-user-plus"></i><span>Allocate to Member</span>
+    </a>
 
-                        {# Guest Allocation #}
-            <a href="{{ url_for('guestroom.index_view')}}"
-            class="nav-item {% if request.endpoint and request.endpoint.startswith('guestroom.') %}active{% endif %}">
-                <i class="fas fa-user-clock"></i><span>Guest Allocations</span>
-            </a>
+   <a href="{{ url_for('guestallocationview.index') }}"
+       class="nav-item {% if request.endpoint == 'guestallocationview.index' %}active{% endif %}">
+        <i class="fas fa-user-tag"></i><span>Allocate to Guest</span>
+    </a>
 
-                        {# Rooms Dashboard #}
-            <a href="{{ url_for('roommanagementdashboard.index')}}"
-            class="nav-item {% if request.endpoint == 'roommanagementdashboard.index' %}active{% endif %}">
-                <i class="fas fa-chart-pie"></i><span>Room Dashboard</span>
-            </a>
+    <a href="{{ url_for('bulkroomoperationview.index') }}"
+       class="nav-item {% if request.endpoint == 'bulkroomoperationview.index' %}active{% endif %}">
+        <i class="fas fa-layer-group"></i><span>Bulk Operations</span>
+    </a>
 
-            <div class="nav-divider"></div>
-            <div class="nav-label">Room Operations</div>
-
-                        {# Member Allocation #}
-            <a href="{{ url_for('roomallocationview.index')}}"
-            class="nav-item {% if request.endpoint == 'roomallocationview.index' %}active{% endif %}">
-                <i class="fas fa-user-plus"></i><span>Allocate to Member</span>
-            </a>
-
-                        {# Guest Allocation #}
-            <a href="{{ url_for('guestallocationview.index')}}"
-            class="nav-item {% if request.endpoint == 'guestallocationview.index' %}active{% endif %}">
-                <i class="fas fa-user-tag"></i><span>Allocate to Guest</span>
-            </a>
-
-                        {# Bulk Operations #}
-            <a href="{{ url_for('bulkroomoperationview.index')}}"
-            class="nav-item {% if request.endpoint == 'bulkroomoperationview.index' %}active{% endif %}">
-                <i class="fas fa-layer-group"></i><span>Bulk Operations</span>
-            </a>
-            {% block nav_spaces %}{% endblock %}
-
-            {# ── Hardware & IoT ─────────────────────────────────────────── #}
-            <div class="nav-divider"></div>
-            <div class="nav-label">Hardware &amp; IoT</div>
-            {% block nav_hardware %}{% endblock %}
-
-            {# ── System & Logs ──────────────────────────────────────────── #}
-            <div class="nav-divider"></div>
-            <div class="nav-label">System &amp; Logs</div>
-            {% block nav_system %}{% endblock %}
-
-            <div class="nav-divider"></div>
-            <a href="{{ url_for('main.dashboard') }}" class="nav-item">
-                <i class="fas fa-home"></i><span>User View</span>
-            </a>
-            <a href="{{ url_for('auth.logout') }}" class="nav-item text-danger">
-                <i class="fas fa-sign-out-alt"></i><span>Logout</span>
-            </a>
-
-        </nav>
-        {% endblock navmenu %}
+    <div class="nav-divider"></div>
+    <a href="{{ url_for('main.dashboard') }}" class="nav-item">
+        <i class="fas fa-home"></i><span>User View</span>
+    </a>
+    <a href="{{ url_for('auth.logout') }}" class="nav-item text-danger">
+        <i class="fas fa-sign-out-alt"></i><span>Logout</span>
+    </a>
+</nav>
+{% endblock navmenu %}
+       
     </aside>
 
     <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
 
-    {# ── MAIN CONTENT ─────────────────────────────────────────────────────── #}
     <main class="main-content">
 
         <header class="top-bar">
@@ -239,14 +193,9 @@
                     <i class="fas fa-bars"></i>
                 </button>
                 <div class="page-header">
-                    {# page_title block: Flask-Admin model views write view name here #}
                     {% block page_title %}
                     <h1>
-                        {% if admin_view is defined %}
-                            {{ admin_view.name }}
-                        {% else %}
-                            Dashboard
-                        {% endif %}
+                        {% if admin_view is defined %}{{ admin_view.name }}{% else %}Dashboard{% endif %}
                     </h1>
                     {% endblock page_title %}
                     <p>{% block page_subtitle %}
@@ -275,7 +224,6 @@
             </div>
         </header>
 
-        {# messages block: Flask-Admin uses layout.messages() for its own flashes #}
         {% block messages %}
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
@@ -296,9 +244,7 @@
         {% endwith %}
         {% endblock messages %}
 
-        {# ── THE CONTENT SLOT — all CRUD views write into {% block body %} ── #}
         <div class="content-wrapper">
-            {# store render context so Flask-Admin form_rules macros work #}
             {% set render_ctx = h.resolve_ctx() if h is defined else none %}
             {% block body %}{% endblock %}
         </div>
@@ -307,10 +253,7 @@
 </div>
 {% endblock page_body %}
 
-{# ── GLOBAL SCRIPTS ──────────────────────────────────────────────────────── #}
-{# tail_js: Flask-Admin injects jQuery, Select2, moment, etc. here          #}
 {% block tail_js %}
-{# Flask-Admin vendor JS (required for CRUD forms, select2, datepicker) #}
 <script src="{{ admin_static.url(filename='vendor/jquery.min.js', v='3.5.1') }}"></script>
 <script src="{{ admin_static.url(filename='bootstrap/bootstrap4/js/popper.min.js') }}"></script>
 <script src="{{ admin_static.url(filename='bootstrap/bootstrap4/js/bootstrap.min.js', v='4.6.2') }}"></script>
@@ -324,7 +267,6 @@
 {% endif %}
 {% endblock tail_js %}
 
-{# tail: edit/create/list templates call super() here — keep it open #}
 {% block tail %}{% endblock %}
 
 <script>

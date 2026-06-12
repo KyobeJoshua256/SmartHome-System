@@ -11,13 +11,12 @@ from wtforms import (
     TimeField,
 )
 from wtforms.fields import DateTimeField
-from wtforms import validators
 from wtforms.validators import DataRequired, Length, Optional, ValidationError
 
 from HomeServer import database
 from HomeServer.models.rooms import Room, RoomMember, RoomStatus, RoomType
 from HomeServer.models.users import User, UserRole
-from HomeServer.models.utils import KAMPALA_TZ, VALID_DAY_NAMES, now_kampala
+from HomeServer.models.utils import KAMPALA_TZ, VALID_DAY_NAMES, to_uganda
 
 # ---------------------------------------------------------------------------
 # Shared constants
@@ -120,10 +119,11 @@ class RoomMemberForm(FlaskForm):
         # 0 is the "vacant" sentinel; admin view coerces it to None on save
         members = (
             database.session.query(User)
-            .filter(User.role != UserRole.GUEST.value, User.is_active.is_(True))
+            .filter(User.is_active.is_(True))
             .order_by(User.username)
             .all()
         )
+
         self.user_id.choices = [
             (0, "--- Vacant (no member) ---"),
         ] + [(u.id, u.username) for u in members]
@@ -154,7 +154,7 @@ class GuestRoomForm(FlaskForm):
         "Expires At",
         format="%Y-%m-%d %H:%M:%S",
         validators=[DataRequired()],
-        default=now_kampala,
+        default=to_uganda,
         description="Hard expiry — access is revoked by the scheduler at this moment.",
     )
     valid_from = TimeField(
@@ -187,10 +187,11 @@ class GuestRoomForm(FlaskForm):
 
         guests = (
             database.session.query(User)
-            .filter(User.role == UserRole.GUEST.value, User.is_active.is_(True))
+            .filter(User.is_active.is_(True))
             .order_by(User.username)
             .all()
         )
+
         self.guest_id.choices = [(u.id, u.username) for u in guests]
 
         admins = (
@@ -266,10 +267,10 @@ class AllocateMemberForm(FlaskForm):
 
         members = (
             database.session.query(User)
-            .filter(User.role != UserRole.GUEST.value, User.is_active.is_(True))
+            .filter(User.is_active.is_(True))
             .order_by(User.username)
             .all()
-        )
+            )
         self.user_id.choices = [(u.id, u.username) for u in members]
 
 
@@ -295,7 +296,7 @@ class AllocateGuestForm(FlaskForm):
         "Expires At",
         format="%Y-%m-%d %H:%M:%S",
         validators=[DataRequired()],
-        default=now_kampala,
+        default=to_uganda,
         description="Hard expiry enforced by the APScheduler job.",
     )
     valid_from = TimeField(
@@ -335,7 +336,7 @@ class AllocateGuestForm(FlaskForm):
 
         guests = (
             database.session.query(User)
-            .filter(User.role == UserRole.GUEST.value, User.is_active.is_(True))
+            .filter(User.is_active.is_(True))
             .order_by(User.username)
             .all()
         )

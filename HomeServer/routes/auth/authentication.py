@@ -15,7 +15,7 @@ from flask_login import login_user, logout_user
 from flask_wtf.csrf import generate_csrf, validate_csrf
 from sqlalchemy import or_, exc as sa_exc
 
-from HomeServer.models.users import User, OTPSession, now_utc, ensure_aware
+from HomeServer.models.users import User, OTPSession, now_kampala, ensure_aware
 from HomeServer import database as db
 
 
@@ -250,13 +250,14 @@ def check_account_status(user: User) -> Tuple[bool, str, Optional[datetime]]:
     Returns (ok, message, locked_until_or_None).
     Side-effect: clears expired locks and commits.
     """
-    if not user.is_active:
-        return False, "Account is disabled. Please contact an administrator.", None
+    # is_active is now a PRESENCE flag (True=online, False=offline).
+    # It must NOT be used to gate login — an offline user is still a valid
+    # account that can log back in. Use is_deleted for the disabled check.
     if user.is_deleted:
         return False, "Account not found.", None
 
     if user.is_locked and user.locked_until:
-        now_t = now_utc()
+        now_t = now_kampala()
         locked_until = ensure_aware(user.locked_until)
 
         if locked_until > now_t:
@@ -318,17 +319,21 @@ def complete_login(user, remember_me=False, login_method='password'):
     try:
         current_app.logger.info(f"=== COMPLETING LOGIN FOR USER {user.id} ===")
 
-        # Reset failed-attempt state
+        # Reset failed-attempt state and mark the user online.
+        # mark_online() sets is_active=True and stamps last_seen.
+        # complete_login() is the single funnel for ALL login paths
+        # (password + OTP), so presence is always updated here.
         user.failed_login_attempts = 0
         user.is_locked             = False
         user.locked_until          = None
+        user.mark_online()
 
         db.session.commit()
 
         login_user(user, remember=remember_me,
                    duration=timedelta(days=30 if remember_me else 1))
 
-        current_app.logger.info(f"User {user.id} logged in via {login_method}")
+        current_app.logger.info(f"User {user.id} logged in via {login_method} — marked online")
 
         # Safe next-page redirect
         from urllib.parse import urlparse
@@ -464,7 +469,7 @@ def handle_password_login():
         status_ok, status_msg, locked_until = check_account_status(user)
         if not status_ok:
             if locked_until:
-                remaining = max(1, int((ensure_aware(locked_until) - now_utc()).total_seconds() / 60))
+                remaining = max(1, int((ensure_aware(locked_until) - now_kampala()).total_seconds() / 60))
                 if remaining > 60:
                     flash(f'Account locked. Try again in {remaining // 60} hour(s).', 'warning')
                 else:
@@ -496,7 +501,7 @@ def handle_password_login():
                 locked_until = user.locked_until
                 if locked_until:
                     locked_until = ensure_aware(locked_until)
-                    remaining = max(1, int((locked_until - now_utc()).total_seconds() / 60))
+                    remaining = max(1, int((locked_until - now_kampala()).total_seconds() / 60))
                     if remaining > 60:
                         flash(f'Account locked. Try again in {remaining // 60} hour(s).', 'warning')
                     else:
@@ -616,8 +621,10 @@ def handle_token_login_request():
             flash(f'Account is locked. Please try again in {minutes} minute(s).', 'error')
             return redirect(url_for('auth.login', type='token'))
         
-        # ── CHECK 3: Account active? ──────────────────────────────────────────
-        if not user.is_active:
+        # ── CHECK 3: Account deleted/disabled? ──────────────────────────────────
+        # is_active is a presence flag (online/offline), NOT an account gate.
+        # Gate on is_deleted for the real disabled check.
+        if user.is_deleted:
             flash('Account is disabled. Please contact an administrator.', 'error')
             return redirect(url_for('auth.login', type='token'))
         
@@ -680,7 +687,7 @@ def handle_token_login_request():
         # Store user info in session for verification step
         flask_session['otp_user_id'] = user.id
         flask_session['otp_user_identifier'] = phone_input
-        flask_session['otp_sent_at'] = now_utc().timestamp()
+        flask_session['otp_sent_at'] = now_kampala().timestamp()
         flask_session['otp_session_id'] = session_id
 
         # Create and populate verify form
@@ -754,8 +761,9 @@ def handle_token_verify():
             flash('Database error. Please try again.', 'error')
             return redirect(url_for('auth.login', type='token'))
 
-        if not user or user.is_deleted or not user.is_active:
-            flash('Account not found or inactive.', 'error')
+        # is_active is a presence flag — don't gate login on it.
+        if not user or user.is_deleted:
+            flash('Account not found or disabled.', 'error')
             return redirect(url_for('auth.login', type='token'))
 
         # ── Account health ────────────────────────────────────────────────────
@@ -850,8 +858,9 @@ def handle_token_resend():
 
         # ── Load user ─────────────────────────────────────────────────────────
         user = User.query.get(otp_session.user_id)
-        if not user or user.is_deleted or not user.is_active:
-            return jsonify({'success': False, 'error': 'Account not found or inactive.'}), 400
+        # is_active is a presence flag — don't gate resend on it.
+        if not user or user.is_deleted:
+            return jsonify({'success': False, 'error': 'Account not found or disabled.'}), 400
 
         # ── Check lockout ─────────────────────────────────────────────────────
         if user.is_locked_out():

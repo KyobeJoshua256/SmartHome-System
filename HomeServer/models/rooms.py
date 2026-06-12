@@ -1,43 +1,3 @@
-"""
-HomeServer/models/rooms.py
-==========================
-SQLAlchemy models and service layer for the room allocation subsystem.
-
-Architecture overview
----------------------
-Room            Physical or logical space.  Devices attach here permanently.
-RoomMember      Allocation of a room to a household member (homeowner / user).
-GuestRoom       Time-bounded allocation of a room to a guest, admin-created.
-RoomService     Stateless allocation helpers — callers own the transaction.
-
-Lifecycle
----------
-                  ┌──────────┐
-            ┌────▶│  VACANT  │◀────────────────────────────┐
-            │     └────┬─────┘                             │
-  release / │          │ allocate_to_member /              │ expire()
-  delete    │          │ allocate_to_guest                 │ release_member_room()
-            │     ┌────▼─────┐                             │
-            └─────│  ACTIVE  │─────────────────────────────┘
-                  └──────────┘
-
-  INACTIVE  — set on a RoomMember when its user account is deleted.
-              Preserves device mappings; room re-enters the vacant pool.
-  EXPIRED   — set on a GuestRoom when its access period elapses.
-
-Notes
------
-- ``GuestRoom.invited_by_id`` is a FK to ``users.username``.  This is
-  intentional so that the inviter's display name is preserved in the audit
-  trail even if the user is later deleted.  Username changes are **not**
-  supported on the User model, so referential integrity holds.
-- The ``assign_default_shared_rooms`` event uses ``after_bulk_update_postexec``
-  (via ``after_flush_postexec``) so ``User.id`` is guaranteed to be populated
-  after the INSERT is reflected back from the DB.
-- Midnight-crossing time windows (e.g. 22:00–02:00) are explicitly handled in
-  ``GuestRoom.is_currently_accessible``.
-"""
-
 from __future__ import annotations
 
 import enum
@@ -61,7 +21,7 @@ from sqlalchemy.orm import relationship, validates
 from sqlalchemy import event
 
 from HomeServer import database
-# from .users import User
+from .users import User
 from .utils import TimestampMixin, KAMPALA_TZ, VALID_DAY_NAMES
 
 
@@ -263,15 +223,10 @@ class GuestRoom(TimestampMixin, database.Model):
 
     # Populated when access expires and the room is released
     vacated_at = Column(DateTime(timezone=True), nullable=True)
+    guest = relationship("User", foreign_keys=[guest_id])
 
     # Relationships
     room = relationship("Room", back_populates="guest_allocations", foreign_keys=[room_id])
-    guest = relationship(
-        "User",
-        foreign_keys=[guest_id],
-        back_populates="guest_rooms",
-        primaryjoin="GuestRoom.guest_id == User.id",
-    )
     invited_by = relationship(
         "User",
         foreign_keys=[invited_by_id],

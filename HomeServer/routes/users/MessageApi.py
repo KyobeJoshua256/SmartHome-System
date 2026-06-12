@@ -16,7 +16,7 @@ from HomeServer.models import (
 User, Conversation, ConversationParticipant, Message, MessageType,
 ConversationType,
 )
-from HomeServer.models.utils import now_utc, to_uganda_time
+from HomeServer.models.utils import now_kampala, to_uganda_time
 from HomeServer.models.chats import _hmac_uid
 from HomeServer import database as db
 
@@ -244,7 +244,7 @@ def send_message(conversation_id: int) -> Any:
         if msg_created_at and msg_created_at.tzinfo is None:
             msg_created_at = msg_created_at.replace(tzinfo=timezone.utc)
         if msg_created_at is None:
-            msg_created_at = now_utc()
+            msg_created_at = now_kampala()
 
         try:
             socketio = current_app.extensions.get('socketio')
@@ -346,7 +346,7 @@ def mark_message_read(message_id: int) -> Any:
                         'conversation_id': message.conversation_id,
                         'reader_id':       current_user.id,
                         'reader_name':     current_user.username,
-                        'read_at':         now_utc().isoformat(),
+                        'read_at':         now_kampala().isoformat(),
                         'read_count':      message.read_count,
                         'status':          read_status.get('status', 'read'),
                     }, room=f'conv_{message.conversation_id}')
@@ -417,7 +417,7 @@ def mark_conversation_read(conversation_id: int) -> Any:
                         'conversation_id': conversation_id,
                         'reader_id':       current_user.id,
                         'reader_name':     current_user.username,
-                        'read_at':         now_utc().isoformat(),
+                        'read_at':         now_kampala().isoformat(),
                         'message_count':   newly_read_count,
                     }, room=f'conv_{conversation_id}')
             except Exception as sock_err:

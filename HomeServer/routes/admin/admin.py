@@ -36,7 +36,7 @@ from sqlalchemy import func, inspect as sa_inspect, or_, case
 from wtforms import PasswordField, ValidationError
 from wtforms.validators import EqualTo, Length, Optional as OptionalValidator
 
-from HomeServer.models.users import OTPSession, User, UserRole, ensure_aware, now_utc
+from HomeServer.models.users import OTPSession, User, UserRole, ensure_aware, now_kampala
 from HomeServer.models.rooms import (
     Room, RoomMember, GuestRoom,
     RoomStatus, RoomType, RoomService,
@@ -47,6 +47,9 @@ from HomeServer.forms.rooms import (
     AllocateMemberForm, AllocateGuestForm, BulkRoomOperationForm,
 )
 
+
+from HomeServer.models.guests import Guest, GuestStatus
+from HomeServer.forms.guests import GuestForm
 logger = logging.getLogger(__name__)
 
 
@@ -63,31 +66,24 @@ def _get_pk(model) -> str:
     except Exception:
         return "unknown"
 
-
 def _localize(dt: datetime) -> datetime:
-    """Convert a naive-or-aware datetime to the current admin user's timezone."""
+    """Convert datetime to Kampala time (EAT/UTC+3) for display."""
     if dt is None:
         return None
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
-    tz_name = getattr(current_user, "timezone", None)
-    if tz_name:
-        try:
-            dt = dt.astimezone(ZoneInfo(tz_name))
-        except Exception:
-            pass
-    return dt
+    # Always convert to Kampala time, ignore user's timezone setting
+    return dt.astimezone(KAMPALA_TZ)
 
 
 def _fmt_dt(dt: datetime) -> Markup:
-    """Render a datetime as a localised <time> element."""
+    """Render a datetime as a localised <time> element in Kampala time."""
     if dt is None:
         return Markup('<span class="text-muted">—</span>')
     local = _localize(dt)
-    label = local.strftime("%Y-%m-%d %H:%M %Z")
+    label = local.strftime("%Y-%m-%d %H:%M:%S %Z")
     iso = local.isoformat()
     return Markup(f'<time datetime="{iso}" title="{iso}">{label}</time>')
-
 
 def _fmt_bool(val) -> Markup:
     """Render a boolean as a coloured Font Awesome icon."""
@@ -282,12 +278,17 @@ class UserAdmin(AuditMixin, AdminAccessMixin, ModelView):
     column_exclude_list = _SENSITIVE
     column_details_exclude_list = _SENSITIVE
     form_excluded_columns = _SENSITIVE + [
-        "created_at", "updated_at",
-        "failed_login_attempts", "locked_until",
-        "otp_request_count", "last_otp_request",
-        "last_password_change","conversations",
-        "messages_sent",
-    ]
+    "created_at", "updated_at",
+    "failed_login_attempts", "locked_until",
+    "otp_request_count", "last_otp_request",
+    "last_password_change", "conversations",
+    "messages_sent",
+    # Add these:
+    "room_memberships", "guest_rooms", "last_seen",
+    "is_deleted", "is_locked",
+    "max_failed_attempts", "lockout_duration_minutes",
+    "max_otp_requests_per_hour", "otp_sessions",
+ ]
 
     # Column list
     column_list = [
@@ -352,9 +353,9 @@ class UserAdmin(AuditMixin, AdminAccessMixin, ModelView):
         'receive_push',
         'mute_notifications',
         'force_password_reset',
-        'max_failed_attempts',
-        'lockout_duration_minutes',
-        'max_otp_requests_per_hour'
+        # 'max_failed_attempts',
+        # 'lockout_duration_minutes',
+        # 'max_otp_requests_per_hour'
     )
     
     # Also define edit form order if different
@@ -368,7 +369,7 @@ class UserAdmin(AuditMixin, AdminAccessMixin, ModelView):
         'otp_enabled',
         'phone_verified', 
         'is_active',
-        'is_locked',
+        # 'is_locked',
         'timezone',
         'avatar_url',
         'receive_push',
@@ -712,7 +713,7 @@ class UserAdmin(AuditMixin, AdminAccessMixin, ModelView):
             if not user.is_locked:
                 user.is_locked = True
                 user.locked_until = (
-                    now_utc() + timedelta(minutes=user.lockout_duration_minutes)
+                    now_kampala() + timedelta(minutes=user.lockout_duration_minutes)
                 )
                 self.session.add(user)
                 logger.info("[ADMIN ACTION] Locked user %s (id=%s) by %s",
@@ -873,7 +874,7 @@ class OTPSessionAdmin(AuditMixin, AdminAccessMixin, ModelView):
         if model.used:
             return Markup('<span class="badge badge-secondary">Used</span>')
         
-        now = now_utc()
+        now = now_kampala()
         expires = ensure_aware(model.expires_at)
         
         if now > expires:
@@ -927,7 +928,7 @@ class OTPSessionAdmin(AuditMixin, AdminAccessMixin, ModelView):
         try:
             # PERFORMANCE: Native SQL update. 
             # NOTE: If your model's mark_used() sets other fields (like used_at), 
-            # add them here: e.g., .update({"used": True, "used_at": now_utc()})
+            # add them here: e.g., .update({"used": True, "used_at": now_kampala()})
             count = self.session.query(self.model).filter(
                 self.model.id.in_(valid_ids),
                 self.model.used.is_(False)
@@ -949,7 +950,7 @@ class OTPSessionAdmin(AuditMixin, AdminAccessMixin, ModelView):
             flash("No valid sessions selected.", "warning")
             return
 
-        now = now_utc()
+        now = now_kampala()
         try:
             # PERFORMANCE: Native SQL delete
             count = self.session.query(self.model).filter(
@@ -983,7 +984,7 @@ class OTPSessionAdmin(AuditMixin, AdminAccessMixin, ModelView):
     @expose("/")
     def index_view(self):
         try:
-            now = now_utc()
+            now = now_kampala()
             # PERFORMANCE: Single query using conditional aggregation instead of 4 separate queries
             row = self.session.query(
                 func.count(self.model.id),
@@ -1020,7 +1021,6 @@ class OTPSessionAdmin(AuditMixin, AdminAccessMixin, ModelView):
 # =============================================================================
 # 8. Dashboard
 # =============================================================================
-
 class SecureAdminIndexView(AdminAccessMixin, AdminIndexView):
     """Admin home page — access-controlled, shows current local time."""
 
@@ -1028,26 +1028,21 @@ class SecureAdminIndexView(AdminAccessMixin, AdminIndexView):
     def index(self):
         if not self.is_accessible():
             return self.inaccessible_callback("index")
-
         current_time = datetime.now(timezone.utc)
         if getattr(current_user, "timezone", None):
             try:
-                current_time = current_time.astimezone(
-                    ZoneInfo(current_user.timezone)
-                )
+                current_time = current_time.astimezone(ZoneInfo(current_user.timezone))
             except Exception:
                 logger.warning(
                     "Invalid timezone '%s' for user %s",
                     current_user.timezone,
                     current_user.username,
                 )
-
         return self.render(
             "admin/dashboard.html",
             user=current_user,
             current_time=current_time.strftime("%Y-%m-%d %H:%M:%S %Z"),
         )
-
 
 # =============================================================================
 # 9. Room Admin Views
@@ -1725,27 +1720,250 @@ class BulkRoomOperationView(AdminAccessMixin, BaseView):
         return self.render("admin/rooms/bulk_room_Operations.html", form=form)
 
 
+# ---------------------------------------------------------------------------
+# 9h. GuestAdminView — CRUD + lifecycle for physical visitors
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# 9h. GuestAdminView — CRUD + lifecycle for physical visitors
+# ---------------------------------------------------------------------------
+
+class GuestAdminView(AuditMixin, AdminAccessMixin, ModelView):
+    """
+    CRUD view for physical Guest visitors (front-desk style log).
+
+    Distinct from GuestRoom — a Guest is a *person*; GuestRoom is a
+    time-bounded digital access grant tied to a User account. A Guest may
+    or may not correspond to a GuestRoom/User at all (e.g. a walk-in
+    visitor who never receives app access).
+
+    Check-in / check-out are exposed as bulk actions that call the model's
+    own ``check_in`` / ``check_out`` methods, which also manage
+    ``Room.status`` (ACTIVE while occupied, VACANT once the last guest in
+    that room checks out).
+    """
+
+    name = "Guests"
+    model_icon = "fas fa-id-badge"
+
+    can_view_details = True
+    can_export = True
+    can_create = True
+    can_edit = True
+    can_delete = True
+    details_modal = True
+    page_size = 50
+    export_types = ["csv", "xlsx"]
+    export_max_rows = 0
+
+    column_list = [
+        "id", "full_name", "phone", "_status", "room",
+        "checked_in_at", "expected_checkout", "checked_out_at",
+        "added_by", "created_at",
+    ]
+    column_labels = {
+        "id": "ID", "full_name": "Name", "phone": "Phone",
+        "_status": "Status", "room": "Room",
+        "checked_in_at": "Checked In", "expected_checkout": "Expected Out",
+        "checked_out_at": "Checked Out", "added_by": "Added By",
+        "created_at": "Logged",
+    }
+    column_details_list = [
+        "id", "full_name", "phone", "status", "room",
+        "checked_in_at", "expected_checkout", "checked_out_at",
+        "added_by", "notes", "created_at", "updated_at",
+    ]
+
+    column_searchable_list = ["full_name", "phone", "notes"]
+    column_filters = ["status", "room.name", "checked_in_at", "expected_checkout"]
+    column_sortable_list = [
+        "id", "full_name", "status", "checked_in_at",
+        "expected_checkout", "checked_out_at", "created_at",
+    ]
+
+    form = GuestForm
+    form_columns = ["full_name", "phone", "status", "room_id", "notes"]
+
+    # ------------------------------------------------------------------
+    # Formatters
+    # ------------------------------------------------------------------
+
+    def _fmt_status(self, ctx, model, name) -> Markup:
+        colors = {
+            "expected":    "info",
+            "checked_in":  "success",
+            "checked_out": "secondary",
+        }
+        icons = {
+            "expected":    "fa-hourglass-half",
+            "checked_in":  "fa-door-open",
+            "checked_out": "fa-door-closed",
+        }
+        val = model.status.value
+        return Markup(
+            f'<span class="badge badge-{colors.get(val, "secondary")}">'
+            f'<i class="fas {icons.get(val, "fa-user")}"></i> '
+            f'{val.replace("_", " ").title()}</span>'
+        )
+
+    def _fmt_room(self, ctx, model, name) -> Markup:
+        if model.room:
+            return Markup(
+                f'<a href="/admin/room/details/?id={model.room_id}" '
+                f'title="View room">'
+                f'<i class="fas fa-door-open"></i> {escape(model.room.name)}</a>'
+            )
+        return Markup('<span class="text-muted">—</span>')
+
+    def _fmt_added_by(self, ctx, model, name) -> Markup:
+        if model.added_by:
+            return Markup(
+                f'<a href="/admin/user/details/?id={model.added_by_id}" '
+                f'title="View user">'
+                f'<i class="fas fa-user-shield"></i> {escape(model.added_by.username)}</a>'
+            )
+        return Markup('<span class="text-muted">—</span>')
+
+    def _fmt_dt(self, ctx, model, name):
+        return _fmt_dt(getattr(model, name, None))
+
+    def _fmt_checkout_warn(self, ctx, model, name) -> Markup:
+        dt = getattr(model, name, None)
+        if dt is None:
+            return Markup('<span class="text-muted">—</span>')
+        formatted = _fmt_dt(dt)
+        if model.status.value == "checked_in":
+            now = datetime.now(tz=KAMPALA_TZ)
+            if dt <= now:
+                return Markup(f'<span class="text-danger">{formatted}</span>')
+            if dt <= now + timedelta(hours=2):
+                return Markup(f'<span class="text-warning">{formatted}</span>')
+        return formatted
+
+    column_formatters = {
+        "_status":           _fmt_status,
+        "room":              _fmt_room,
+        "added_by":          _fmt_added_by,
+        "checked_in_at":     _fmt_dt,
+        "checked_out_at":    _fmt_dt,
+        "expected_checkout": _fmt_checkout_warn,
+        "created_at":        _fmt_dt,
+    }
+
+    column_formatters_detail = {
+        "status":            _fmt_status,
+        "room":              _fmt_room,
+        "added_by":          _fmt_added_by,
+        "checked_in_at":     _fmt_dt,
+        "checked_out_at":    _fmt_dt,
+        "expected_checkout": _fmt_checkout_warn,
+        "created_at":        _fmt_dt,
+        "updated_at":        _fmt_dt,
+    }
+
+    # ------------------------------------------------------------------
+    # Lifecycle hooks
+    # ------------------------------------------------------------------
+
+    def on_model_change(self, form, model, is_created: bool) -> None:
+        """Auto-set added_by on creation; model validators handle the rest."""
+        super().on_model_change(form, model, is_created)
+        if is_created:
+            model.added_by_id = current_user.id
+
+    # ------------------------------------------------------------------
+    # Bulk actions — delegate to model business logic
+    # ------------------------------------------------------------------
+
+    @action("check_in", "Check In Selected",
+            "Check in selected guests? Each must have a room assigned.")
+    def action_check_in(self, ids) -> None:
+        count, skipped = 0, 0
+        for guest in self._fetch_guests(ids):
+            if guest.status == GuestStatus.CHECKED_IN:
+                skipped += 1
+                continue
+            if guest.room_id is None:
+                skipped += 1
+                continue
+            guest.check_in(guest.room_id)
+            self.session.add(guest)
+            logger.info(
+                "[ADMIN ACTION] Checked in guest %s (id=%s) to room_id=%s by %s",
+                guest.full_name, guest.id, guest.room_id,
+                getattr(current_user, "username", "unknown"),
+            )
+            count += 1
+        self.session.commit()
+        msg = f"Checked in {count} guest(s)."
+        if skipped:
+            msg += f" Skipped {skipped} (already checked in or no room assigned)."
+        flash(msg, "success" if count else "warning")
+
+    @action("check_out", "Check Out Selected",
+            "Check out selected guests and release their rooms (if last occupant)?")
+    def action_check_out(self, ids) -> None:
+        count, skipped = 0, 0
+        for guest in self._fetch_guests(ids):
+            if guest.status != GuestStatus.CHECKED_IN:
+                skipped += 1
+                continue
+            guest.check_out()
+            self.session.add(guest)
+            logger.info(
+                "[ADMIN ACTION] Checked out guest %s (id=%s) by %s",
+                guest.full_name, guest.id,
+                getattr(current_user, "username", "unknown"),
+            )
+            count += 1
+        self.session.commit()
+        msg = f"Checked out {count} guest(s)."
+        if skipped:
+            msg += f" Skipped {skipped} (not currently checked in)."
+        flash(msg, "success" if count else "warning")
+
+    @action("mark_expected", "Reset to Expected",
+            "Reset selected guests to EXPECTED? Checked-in guests will be checked out first "
+            "(releasing their room if they're the last occupant).")
+    def action_mark_expected(self, ids) -> None:
+        count = 0
+        for guest in self._fetch_guests(ids):
+            if guest.status == GuestStatus.CHECKED_IN:
+                # Reuse check_out() so Room.status is released correctly
+                guest.check_out()
+            guest.status = GuestStatus.EXPECTED
+            guest.checked_in_at = None
+            guest.checked_out_at = None
+            guest.expected_checkout = None
+            guest.room_id = None
+            self.session.add(guest)
+            logger.info(
+                "[ADMIN ACTION] Reset guest %s (id=%s) to EXPECTED by %s",
+                guest.full_name, guest.id,
+                getattr(current_user, "username", "unknown"),
+            )
+            count += 1
+        self.session.commit()
+        flash(f"Reset {count} guest(s) to Expected.", "success")
+
+    # Internal helper
+    def _fetch_guests(self, ids):
+        return (
+            self.session.query(self.model)
+            .filter(self.model.id.in_([int(i) for i in ids]))
+            .all()
+        )
+
+    def render(self, template, **kwargs):
+        kwargs.setdefault("model_name", self.name)
+        kwargs.setdefault("model_icon", self.model_icon)
+        return super().render(template, **kwargs)
+
+
 # =============================================================================
 # 10. Factory
 # =============================================================================
-
 def init_admin(app, db):
-    """
-    Create and configure the Flask-Admin instance.
-
-    Registered views
-    ----------------
-    /admin/                          → Dashboard
-    /admin/user/                     → UserAdmin          (Identity & Access)
-    /admin/otpsession/               → OTPSessionAdmin    (Identity & Access)
-    /admin/room/                     → RoomAdminView      (Room Management)
-    /admin/roommember/               → RoomMemberAdmin    (Room Management)
-    /admin/guestroom/                → GuestRoomAdmin     (Room Management)
-    /admin/roommanagementdashboard/  → Dashboard         (Room Management)
-    /admin/roomallocationview/       → Allocate to Member (Room Operations)
-    /admin/guestallocationview/      → Allocate to Guest  (Room Operations)
-    /admin/bulkroomoperationview/    → Bulk Operations    (Room Operations)
-    """
     admin = Admin(
         app,
         name="EBS HUB",
@@ -1757,44 +1975,65 @@ def init_admin(app, db):
     # -- Identity & Access ---------------------------------------------------
     admin.add_view(
         UserAdmin(
-            User,
-            db.session,
+            User, db.session,
             name="Users",
             category="Identity & Access",
+            endpoint="users",  # ← Add this
+            menu_icon_type="fa",
+            menu_icon_value="fa-users",
         )
     )
     admin.add_view(
         OTPSessionAdmin(
-            OTPSession,
-            db.session,
+            OTPSession, db.session,
             name="OTP Sessions",
             category="Identity & Access",
+            endpoint="otp_sessions",  # ← Add this
+            menu_icon_type="fa",
+            menu_icon_value="fa-key",
         )
     )
 
+    # ------Guest Management ----------------------
+    admin.add_view(
+        GuestAdminView(
+            Guest,db.session,
+            name="Guests",
+            category="Identity & Access",
+            endpoint="guests_log",
+            menu_icon_type="fa",
+            menu_icon_value="fa-id-badge",
+        )
+    )
     # -- Room Management (CRUD) ----------------------------------------------
     admin.add_view(
         RoomAdminView(
-            Room,
-            db.session,
+            Room, db.session,
             name="Rooms",
             category="Room Management",
+            endpoint="rooms",  # ← Add this
+            menu_icon_type="fa",
+            menu_icon_value="fa-door-open",
         )
     )
     admin.add_view(
         RoomMemberAdminView(
-            RoomMember,
-            db.session,
+            RoomMember, db.session,
             name="Room Allocations",
             category="Room Management",
+            endpoint="room_allocations",  # ← Add this
+            menu_icon_type="fa",
+            menu_icon_value="fa-bed",
         )
     )
     admin.add_view(
         GuestRoomAdminView(
-            GuestRoom,
-            db.session,
+            GuestRoom, db.session,
             name="Guest Allocations",
             category="Room Management",
+            endpoint="guest_allocations",  # ← Add this
+            menu_icon_type="fa",
+            menu_icon_value="fa-user-clock",
         )
     )
     admin.add_view(
@@ -1802,6 +2041,8 @@ def init_admin(app, db):
             name="Dashboard",
             endpoint="roommanagementdashboard",
             category="Room Management",
+            menu_icon_type="fa",
+            menu_icon_value="fa-chart-pie",
         )
     )
 
@@ -1811,6 +2052,8 @@ def init_admin(app, db):
             name="Allocate to Member",
             endpoint="roomallocationview",
             category="Room Operations",
+            menu_icon_type="fa",
+            menu_icon_value="fa-user-plus",
         )
     )
     admin.add_view(
@@ -1818,6 +2061,8 @@ def init_admin(app, db):
             name="Allocate to Guest",
             endpoint="guestallocationview",
             category="Room Operations",
+            menu_icon_type="fa",
+            menu_icon_value="fa-user-tag",
         )
     )
     admin.add_view(
@@ -1825,6 +2070,8 @@ def init_admin(app, db):
             name="Bulk Operations",
             endpoint="bulkroomoperationview",
             category="Room Operations",
+            menu_icon_type="fa",
+            menu_icon_value="fa-layer-group",
         )
     )
 

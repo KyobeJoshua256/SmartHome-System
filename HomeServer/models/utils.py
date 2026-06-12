@@ -1,31 +1,33 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from datetime import datetime
-from zoneinfo import ZoneInfo
+import pytz
 from sqlalchemy import Column, DateTime, event
 from sqlalchemy.orm import DeclarativeBase
 
-KAMPALA_TZ = ZoneInfo("Africa/Kampala")
+# Use pytz for timezone handling (more reliable than zoneinfo)
+KAMPALA_TZ = pytz.timezone('Africa/Kampala')
 EAT = KAMPALA_TZ
 VALID_DAY_NAMES = {"mon", "tue", "wed", "thu", "fri", "sat", "sun"}
 
-def now_utc():
-    """East Africa Time (UTC+3), consistent across all models."""
-    return datetime.now(EAT)
 
-def to_uganda_time(dt: Optional[datetime]) -> Optional[datetime]:
-    """Convert *dt* (naive UTC or aware) to Uganda time (UTC+3)."""
+def now_kampala():
+    return datetime.now(pytz.UTC).replace(microsecond=0)
+
+def to_uganda():
+    """Return current Kampala time stripped of microseconds."""
+    # Use pytz to get current Kampala time
+    return datetime.now(KAMPALA_TZ).replace(microsecond=0)
+
+
+def to_uganda_time(dt: datetime) -> datetime:
+    """Convert a datetime (naive or tz-aware) to Kampala time, stripped of microseconds."""
     if dt is None:
         return None
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(EAT)
+    return dt.astimezone(KAMPALA_TZ).replace(microsecond=0)
 
-
-
-def now_kampala():
-    """Return current Kampala time stripped of microseconds."""
-    return datetime.now(KAMPALA_TZ).replace(microsecond=0)
 
 class TimestampMixin:
     """Automatic timestamp tracking in Kampala time (EAT, UTC+3), no microseconds."""

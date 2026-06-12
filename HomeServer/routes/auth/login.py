@@ -15,7 +15,7 @@ from flask_login import login_required, current_user
 from flask_wtf.csrf import generate_csrf
 from flask import jsonify
 from sqlalchemy import exc, or_
-from HomeServer.models.users import User, now_utc, ensure_aware
+from HomeServer.models.users import User, now_kampala, ensure_aware
 from HomeServer import database as db
 from HomeServer.forms.authentication import LoginForm, TokenRequestForm, TokenVerifyForm
 from HomeServer.routes.auth.authentication import (
@@ -147,6 +147,17 @@ def logout() -> Any:
     username = current_user.username
     current_app.logger.info(f"=== STARTING LOGOUT FOR USER {user_id} ({username}) ===")
     try:
+        # Mark user offline BEFORE clearing the session so current_user is
+        # still resolvable. This stamps last_seen and sets is_active=False.
+        try:
+            current_user.logout()
+            db.session.commit()
+        except Exception as presence_err:
+            current_app.logger.warning(
+                f"Could not mark user {user_id} offline on logout: {presence_err}"
+            )
+            db.session.rollback()
+
         flask_session.clear()
         from flask_login import logout_user
         logout_user()
@@ -176,9 +187,11 @@ def logout() -> Any:
     except Exception as error:
         current_app.logger.error(f"Logout error: {error}", exc_info=True)
         try:
-            db.session.rollback()
+            # Best-effort: try to mark offline even in the error path
+            current_user.mark_offline()
+            db.session.commit()
         except Exception:
-            pass
+            db.session.rollback()
         flask_session.clear()
         from flask_login import logout_user
         logout_user()
@@ -276,8 +289,10 @@ def check_identifier():
                     'message': 'No account found with this phone number. Please use password login.'
                 })
             
-            # Check account status for token tab
-            if not user.is_active:
+            # is_deleted is the real "disabled" flag.
+            # is_active is now a presence flag (True=online, False=offline) —
+            # an offline user can still log in.
+            if user.is_deleted:
                 return jsonify({
                     'status': 'inactive',
                     'message': 'Account is disabled. Please contact administrator.'
@@ -314,7 +329,7 @@ def check_identifier():
             else:
                 can_otp, otp_blocked_reason = user.can_request_otp()
                 if not can_otp and user.last_otp_request:
-                    secs_since = (now_utc() - ensure_aware(user.last_otp_request)).total_seconds()
+                    secs_since = (now_kampala() - ensure_aware(user.last_otp_request)).total_seconds()
                     if secs_since < 30:
                         otp_cooldown = int(30 - secs_since)
                         otp_blocked_reason = f'Please wait {otp_cooldown} seconds before requesting another code.'
@@ -395,8 +410,9 @@ def check_identifier():
             current_app.logger.info(f"[PASSWORD TAB] No user found for: '{raw}'")
             return jsonify({'status': 'not_found'})
 
-        # Check account status
-        if not user.is_active:
+        # is_active is now a presence flag (online/offline), not an account
+        # enabled flag. Use is_deleted to gate disabled accounts instead.
+        if user.is_deleted:
             return jsonify({'status': 'inactive'})
 
         is_locked = user.is_locked_out()
@@ -406,7 +422,7 @@ def check_identifier():
 
         if is_locked and user.locked_until:
             lu = ensure_aware(user.locked_until)
-            remaining_seconds = max(0, int((lu - now_utc()).total_seconds()))
+            remaining_seconds = max(0, int((lu - now_kampala()).total_seconds()))
             total_duration_seconds = user.lockout_duration_minutes * 60
             locked_until_ms = int(lu.timestamp() * 1000)
 
@@ -492,17 +508,18 @@ def check_user_status(identifier=None):
         
         if is_locked and user.locked_until:
             locked_until = ensure_aware(user.locked_until)
-            now = now_utc()
+            now = now_kampala()
             remaining_seconds = max(0, int((locked_until - now).total_seconds()))
             total_duration_seconds = user.lockout_duration_minutes * 60
             locked_until_ms = int(locked_until.timestamp() * 1000)
         
-        # Check OTP availability
+        # Check OTP availability — gate on is_deleted (account disabled), not
+        # is_active (which is now a presence/online flag, not an account state).
         can_request_otp = False
         otp_blocked_reason = None
         remaining_cooldown = 0
         
-        if not is_locked and user.is_active:
+        if not is_locked and not user.is_deleted:
             if not user.phone_verified:
                 can_request_otp = False
                 otp_blocked_reason = 'Phone number not verified'
@@ -516,7 +533,7 @@ def check_user_status(identifier=None):
                 
                 if not can_request and user.last_otp_request:
                     last_request = ensure_aware(user.last_otp_request)
-                    time_since_last = (now_utc() - last_request).total_seconds()
+                    time_since_last = (now_kampala() - last_request).total_seconds()
                     if time_since_last < 30:
                         remaining_cooldown = int(30 - time_since_last)
                     elif user.otp_request_count >= user.max_otp_requests_per_hour:
@@ -528,7 +545,9 @@ def check_user_status(identifier=None):
             'username': user.username,
             'phone': user.get_formatted_phone(),
             'email': user.email,
-            'is_active': user.is_active,
+            'is_online': user.is_active,       # True = currently logged in
+            'is_active': user.is_active,        # kept for backwards compat
+            'last_seen': user.last_seen.isoformat() if user.last_seen else None,
             'is_deleted': user.is_deleted,
             'is_locked': is_locked,
             'has_password': user.has_password(),

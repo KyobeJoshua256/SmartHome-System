@@ -116,7 +116,7 @@ class ConversationType(PyEnum):
 # ============================================================================
 # Utility
 # ============================================================================
-from .utils import now_utc, EAT
+from .utils import now_kampala, EAT
 
 # ============================================================================
 # Mixins
@@ -143,7 +143,7 @@ class SoftDeleteMixin:
 
     def soft_delete(self) -> None:
         self.is_deleted = True
-        self.deleted_at = now_utc()
+        self.deleted_at = now_kampala()
 
     def restore(self) -> None:
         self.is_deleted = False
@@ -280,7 +280,7 @@ class ConversationParticipant(TimestampMixin, SoftDeleteMixin, database.Model):
 
     def mark_as_read(self) -> None:
         """Zero the unread counter and record the read timestamp."""
-        self.last_read_at = now_utc()
+        self.last_read_at = now_kampala()
         self.unread_count = 0
 
     def increment_unread(self) -> None:
@@ -467,7 +467,7 @@ class Message(TimestampMixin, SoftDeleteMixin, database.Model):
             raise ValueError("Cannot edit a deleted message.")
         self.content   = new_content   
         self.is_edited = True
-        self.edited_at = now_utc()
+        self.edited_at = now_kampala()
 
     # ------------------------------------------------------------------
     # Pinning
@@ -476,7 +476,7 @@ class Message(TimestampMixin, SoftDeleteMixin, database.Model):
     def pin(self, by_user_id: int) -> None:
         """Pin this message; record who pinned it and when."""
         self.is_pinned    = True
-        self.pinned_at    = now_utc()
+        self.pinned_at    = now_kampala()
         self.pinned_by_id = by_user_id
 
     def unpin(self) -> None:
@@ -501,9 +501,9 @@ class Message(TimestampMixin, SoftDeleteMixin, database.Model):
 
         key = _hmac_uid(user_id)
         if key not in self.read_by:
-            self.read_by[key] = now_utc().isoformat()
+            self.read_by[key] = now_kampala().isoformat()
             self.read_count   = len(self.read_by)
-            self.last_read_at = now_utc()
+            self.last_read_at = now_kampala()
             flag_modified(self, "read_by")
             return True
         return False
@@ -669,5 +669,5 @@ __all__ = [
     "SoftDeleteMixin",
     "EncryptedText",
     "_hmac_uid",
-    "now_utc",
+    "now_kampala",
 ]

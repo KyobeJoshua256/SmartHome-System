@@ -37,7 +37,10 @@ def setup_wizard():
                 email=email,
                 phone=phone,
                 role=UserRole.ADMIN.value,
-                is_active=True,
+                # is_active is a presence flag (True=online, False=offline).
+                # A newly created account starts offline; it becomes True
+                # automatically when the admin logs in for the first time.
+                is_active=False,
                 phone_verified=True,  
                 otp_enabled=False
             )

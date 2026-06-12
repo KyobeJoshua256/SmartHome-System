@@ -1,5 +1,5 @@
 # Final imports for dashboard_data.py
-from HomeServer.models.utils import now_utc, to_uganda_time
+from HomeServer.models.utils import now_kampala, to_uganda_time
 from typing import Dict, Any, List
 from HomeServer.models.users import User, UserRole
 from HomeServer.routes.users.chatshelper import get_conversations_data, build_conversations_json
@@ -111,26 +111,6 @@ def _get_member_rooms(user_id: int) -> Dict[str, List[RoomMember]]:
     return {"personal": personal_rooms, "shared": shared_rooms}
 
 
-def _get_guest_rooms(user_id: int) -> List[GuestRoom]:
-    """
-    Return active, non-expired GuestRoom allocations for a guest user.
-    Fine-grained time-window access (valid_from/valid_until/valid_days) is
-    evaluated in the template via guest_room.is_currently_accessible().
-    """
-    now = _now()
-    return (
-        database.session.query(GuestRoom)
-        .join(GuestRoom.room)
-        .filter(
-            GuestRoom.guest_id == user_id,
-            GuestRoom.status   == RoomStatus.ACTIVE,
-            GuestRoom.expires_at > now,
-        )
-        .order_by(GuestRoom.expires_at)
-        .all()
-    )
-
-
 def _get_admin_room_overview() -> Dict[str, int]:
     """Scalar room stats for the admin overview panel — 4 fast index queries."""
     now = _now()
@@ -166,24 +146,16 @@ def get_room_data(user: User) -> Dict[str, Any]:
     {
         personal_rooms  : list[RoomMember]   — this user's personal rooms
         shared_rooms    : list[RoomMember]   — shared rooms (all members see these)
-        guest_rooms     : list[GuestRoom]    — active guest allocations (guests only)
         admin_overview  : dict | None        — room stats for admins, else None
         total_rooms     : int                — personal + shared count (quick badge)
     }
     """
     role = user.role
 
-    if role == UserRole.GUEST.value:
-        # Guests see only their own guest allocations
-        personal_rooms = []
-        shared_rooms   = []
-        guest_rooms    = _get_guest_rooms(user.id)
-    else:
-        # Members and admins see personal + shared rooms
-        member_rooms   = _get_member_rooms(user.id)
-        personal_rooms = member_rooms["personal"]
-        shared_rooms   = member_rooms["shared"]
-        guest_rooms    = []
+    # Members and admins see personal + shared rooms
+    member_rooms   = _get_member_rooms(user.id)
+    personal_rooms = member_rooms["personal"]
+    shared_rooms   = member_rooms["shared"]
 
     admin_overview = (
         _get_admin_room_overview() if role == UserRole.ADMIN.value else None
@@ -192,10 +164,9 @@ def get_room_data(user: User) -> Dict[str, Any]:
     return {
         "personal_rooms": personal_rooms,
         "shared_rooms":   shared_rooms,
-        "guest_rooms":    guest_rooms,
         "admin_overview": admin_overview,
         # Convenience count for nav badges / empty-state checks
-        "total_rooms":    len(personal_rooms) + len(shared_rooms) + len(guest_rooms),
+        "total_rooms":    len(personal_rooms) + len(shared_rooms),
     }
 
 
@@ -232,7 +203,6 @@ def get_user_dashboard_data(user: User) -> Dict[str, Any]:
     # Room variables (from get_room_data)
     personal_rooms    list[RoomMember]
     shared_rooms      list[RoomMember]
-    guest_rooms       list[GuestRoom]
     admin_overview    dict | None     — room stats, admins only
     total_rooms       int             — combined room count
     """
@@ -256,10 +226,9 @@ def get_user_dashboard_data(user: User) -> Dict[str, Any]:
         # Room data (unpacked so templates access them as top-level vars)
         "personal_rooms": rooms["personal_rooms"],
         "shared_rooms":   rooms["shared_rooms"],
-        "guest_rooms":    rooms["guest_rooms"],
         "admin_overview": rooms["admin_overview"],
         "total_rooms":    rooms["total_rooms"],
 
         # Time
-        "now": to_uganda_time(now_utc()),
+        "now": now_kampala(),
     }

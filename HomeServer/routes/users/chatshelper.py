@@ -15,7 +15,7 @@ from HomeServer.models import (
     User, Conversation, ConversationParticipant, Message,
     MessageType, ConversationType,                      
 )
-from HomeServer.models.utils import now_utc, to_uganda_time           
+from HomeServer.models.utils import now_kampala, to_uganda_time           
 from HomeServer import database as db
 
 
