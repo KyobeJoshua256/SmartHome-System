@@ -9,6 +9,7 @@ from wtforms import (
     SelectMultipleField,
     StringField,
     TimeField,
+    TextAreaField,  # For QuickGuestForm
 )
 from wtforms.fields import DateTimeField
 from wtforms.validators import DataRequired, Length, Optional, ValidationError
@@ -17,6 +18,7 @@ from HomeServer import database
 from HomeServer.models.rooms import Room, RoomMember, RoomStatus, RoomType
 from HomeServer.models.users import User, UserRole
 from HomeServer.models.utils import KAMPALA_TZ, VALID_DAY_NAMES, to_uganda
+from HomeServer.models.guests import Guest, GuestStatus  
 
 # ---------------------------------------------------------------------------
 # Shared constants
@@ -35,7 +37,7 @@ def _parse_valid_days(raw: str) -> list[str]:
     Raises ``ValidationError`` if any entry is not a recognised short day name.
     """
     days = [d.strip().lower() for d in raw.split(",") if d.strip()]
-    invalid = set(days) - _VALID_DAY_NAMES
+    invalid = set(days) - VALID_DAY_NAMES
     if invalid:
         raise ValidationError(
             f"Unrecognised day name(s): {', '.join(sorted(invalid))}. "
@@ -77,9 +79,9 @@ class RoomForm(FlaskForm):
 class RoomMemberForm(FlaskForm):
     """
     Edit a RoomMember allocation row directly.
-
-    ``user_id = 0`` is the sentinel for "no user assigned" (VACANT).
-    The admin view's ``on_model_change`` converts 0 → None before saving.
+    
+    Shows ALL users for allocation editing because room access shouldn't
+    be tied to user's is_active status.
     """
 
     room_id = SelectField("Room", coerce=int, validators=[DataRequired()])
@@ -116,18 +118,26 @@ class RoomMemberForm(FlaskForm):
             for r in database.session.query(Room).order_by(Room.name).all()
         ]
 
+        # ✅ FIX: Show ALL users (not just active ones)
         # 0 is the "vacant" sentinel; admin view coerces it to None on save
-        members = (
+        all_users = (
             database.session.query(User)
-            .filter(User.is_active.is_(True))
-            .order_by(User.username)
+            .filter(User.is_deleted == False)  # Only exclude deleted users
+            .order_by(User.is_active.desc(), User.username)
             .all()
         )
 
-        self.user_id.choices = [
-            (0, "--- Vacant (no member) ---"),
-        ] + [(u.id, u.username) for u in members]
-
+        self.user_id.choices = [(0, "--- Vacant (no member) ---")]
+        
+        for user in all_users:
+            status_indicator = ""
+            if not user.is_active:
+                status_indicator = " [OFFLINE]"
+            elif user.is_locked:
+                status_indicator = " [LOCKED]"
+            
+            display_name = f"{user.username} ({user.role}){status_indicator}"
+            self.user_id.choices.append((user.id, display_name))
 
 # ---------------------------------------------------------------------------
 # GuestRoomForm — direct CRUD on a GuestRoom allocation row
@@ -223,9 +233,11 @@ class GuestRoomForm(FlaskForm):
 class AllocateMemberForm(FlaskForm):
     """
     Allocate a room from the vacant pool to a household member.
-
-    Only VACANT / INACTIVE RoomMember rows are offered — this prevents
-    double-allocation and matches ``RoomService.allocate_to_member`` semantics.
+    
+    Shows ALL users regardless of is_active status because:
+    - A user might be inactive but still need room access
+    - is_active might be used for login suspension, not room access
+    - Room allocation should be based on user existence, not active status
     """
 
     room_member_id = SelectField(
@@ -247,6 +259,7 @@ class AllocateMemberForm(FlaskForm):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
 
+        # Vacant room slots (unchanged)
         vacant_slots = (
             database.session.query(RoomMember)
             .filter(
@@ -265,61 +278,82 @@ class AllocateMemberForm(FlaskForm):
             for rm in vacant_slots
         ]
 
-        members = (
+        # ✅ FIX: Show ALL users - remove the is_active filter
+        # Show all users regardless of active status
+        all_users = (
             database.session.query(User)
-            .filter(User.is_active.is_(True))
-            .order_by(User.username)
-            .all()
+            .filter(User.is_deleted == False)  # Only exclude deleted users
+            .order_by(
+                User.is_active.desc(),  # Show active users first for better UX
+                User.username
             )
-        self.user_id.choices = [(u.id, u.username) for u in members]
-
+            .all()
+        )
+        
+        # Create choices with status indicator
+        self.user_id.choices = []
+        
+        # Add a placeholder option
+        self.user_id.choices.append((0, "--- Select User ---"))
+        
+        for user in all_users:
+            # Add status indicator to help admin make informed decision
+            status_label = ""
+            if not user.is_active:
+                status_label = " [INACTIVE]"
+            elif user.is_locked:
+                status_label = " [LOCKED]"
+            
+            # Format the display name with role and status
+            display_name = f"{user.username} ({user.role}){status_label}"
+            self.user_id.choices.append((user.id, display_name))
+        
+        # Optional: Add debug logging to see what users are being loaded
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.debug(f"Loaded {len(all_users)} users for room allocation dropdown")
 
 # ---------------------------------------------------------------------------
 # AllocateGuestForm — workflow: pick a vacant room → assign a guest
 # ---------------------------------------------------------------------------
-
 class AllocateGuestForm(FlaskForm):
     """
-    Allocate a VACANT room to a guest with time-bounded access.
-    Admin-only; ``invited_by`` is always derived from ``current_user`` in
-    the view — it is not exposed as a form field to prevent spoofing.
+    Allocate a VACANT room to a PHYSICAL WALK-IN GUEST.
     """
-
+    
     room_id = SelectField(
-        "Vacant Room",
-        coerce=int,
+        "Vacant Room", 
+        coerce=int, 
         validators=[DataRequired()],
-        description="Only rooms with VACANT status are offered.",
+        choices=[(0, "--- Select Vacant Room ---")],  # Use 0 as sentinel
+        description="Only GUEST-type rooms with VACANT status are offered."
     )
-    guest_id = SelectField("Guest User", coerce=int, validators=[DataRequired()])
-    expires_at = DateTimeField(
-        "Expires At",
+    
+    guest_id = SelectField(
+        "Select Walk-in Guest", 
+        coerce=int, 
+        validators=[DataRequired()],
+        choices=[(0, "--- Select Walk-in Guest ---")],
+        description="Physical visitor who will occupy this room."
+    )
+    
+    expected_checkout = DateTimeField(
+        "Expected Checkout",
         format="%Y-%m-%d %H:%M:%S",
-        validators=[DataRequired()],
-        default=to_uganda,
-        description="Hard expiry enforced by the APScheduler job.",
-    )
-    valid_from = TimeField(
-        "Daily Window — From",
-        format="%H:%M:%S",
         validators=[Optional()],
+        description="When the guest is expected to leave (optional)."
     )
-    valid_until = TimeField(
-        "Daily Window — Until",
-        format="%H:%M:%S",
-        validators=[Optional()],
-    )
-    valid_days = StringField(
-        "Valid Days",
-        validators=[Optional(), Length(max=50)],
-        description="e.g. 'mon,wed,fri' — leave blank for all days.",
-    )
+    
     can_view = BooleanField("Can View", default=True)
-    can_control = BooleanField("Can Control", default=True)
+    can_control = BooleanField("Can Control", default=False)
+    notes = TextAreaField("Additional Notes", validators=[Optional(), Length(max=500)])
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-
+        
+        from HomeServer.models.guests import GuestStatus
+        
+        # Room choices
         vacant_rooms = (
             database.session.query(Room)
             .filter(
@@ -329,42 +363,86 @@ class AllocateGuestForm(FlaskForm):
             .order_by(Room.name)
             .all()
         )
-        self.room_id.choices = [
-            (r.id, f"{r.name}  [{r.room_type.value}]")
-            for r in vacant_rooms
-        ]
-
-        guests = (
-            database.session.query(User)
-            .filter(User.is_active.is_(True))
-            .order_by(User.username)
+        
+        self.room_id.choices = [(0, "--- Select Vacant Room ---")]
+        for r in vacant_rooms:
+            self.room_id.choices.append((r.id, f"{r.name}"))
+        
+        # Guest choices
+        physical_guests = (
+            database.session.query(Guest)
+            .filter(
+                Guest.status != GuestStatus.CHECKED_IN,
+                Guest.status != GuestStatus.CHECKED_OUT,
+            )
+            .order_by(Guest.full_name)
             .all()
         )
-        self.guest_id.choices = [(u.id, u.username) for u in guests]
+        
+        self.guest_id.choices = [(0, "--- Select Walk-in Guest ---")]
+        for guest in physical_guests:
+            status_icon = "🔄" if guest.status.value == "expected" else "✓"
+            phone_info = f" ({guest.phone})" if guest.phone else ""
+            display_name = f"{status_icon} {guest.full_name}{phone_info} - {guest.status.value.upper()}"
+            self.guest_id.choices.append((guest.id, display_name))
+        
+        # Debug logging
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Loaded {len(physical_guests)} physical guests")
+        logger.info(f"Loaded {len(vacant_rooms)} vacant rooms")
 
-    def validate_valid_days(self, field: StringField) -> None:
-        """Normalise and validate the comma-separated day string."""
-        if not field.data or not field.data.strip():
-            field.data = None
-            return
-        field.data = ",".join(_parse_valid_days(field.data))
-
-    def validate_valid_until(self, field: TimeField) -> None:
-        """Ensure valid_until is after valid_from when both are provided."""
-        if field.data and self.valid_from.data:
-            if field.data <= self.valid_from.data:
-                raise ValidationError("'Valid Until' must be later than 'Valid From'.")
-
-    def validate_expires_at(self, field: DateTimeField) -> None:
-        """Ensure expiry is in the future."""
+    def validate_room_id(self, field):
+        """Validate room selection"""
+        if field.data == 0 or field.data is None:
+            raise ValidationError('Please select a room')
+        
+        # Verify room is still vacant
+        room = database.session.get(Room, field.data)
+        if room and room.status != RoomStatus.VACANT:
+            raise ValidationError(f"Room '{room.name}' is no longer vacant. Please select another room.")
+        return field.data
+    
+    def validate_guest_id(self, field):
+        """Validate guest selection"""
+        if field.data == 0 or field.data is None:
+            raise ValidationError('Please select a guest')
+        
+        # Verify guest is not already checked in
+        from HomeServer.models.guests import GuestStatus
+        guest = database.session.get(Guest, field.data)
+        if guest and guest.status == GuestStatus.CHECKED_IN:
+            raise ValidationError(f"Guest '{guest.full_name}' is already checked into another room.")
+        return field.data
+    
+    def validate_expected_checkout(self, field):
+        """Ensure expected checkout is in the future if provided"""
         if field.data:
             now = datetime.now(tz=KAMPALA_TZ)
-            # Make expires_at tz-aware for comparison if it came in naive
-            expires = field.data
-            if expires.tzinfo is None:
-                expires = expires.replace(tzinfo=KAMPALA_TZ)
-            if expires <= now:
-                raise ValidationError("Expiry must be a future date and time.")
+            if field.data.tzinfo is None:
+                field.data = field.data.replace(tzinfo=KAMPALA_TZ)
+            if field.data <= now:
+                raise ValidationError("Expected checkout must be in the future.")
+
+class QuickGuestForm(FlaskForm):
+    """Quick create a physical guest for room allocation."""
+    
+    full_name = StringField(
+        "Guest Full Name",
+        validators=[DataRequired(), Length(min=2, max=120)],
+        render_kw={"placeholder": "e.g., John Doe"}
+    )
+    phone = StringField(
+        "Phone Number",
+        validators=[Optional(), Length(max=20)],
+        render_kw={"placeholder": "+256XXXXXXXXX"}
+    )
+    notes = TextAreaField(
+        "Notes",
+        validators=[Optional()],
+        render_kw={"placeholder": "Any additional information about this guest"}
+    )
+
 
 
 # ---------------------------------------------------------------------------

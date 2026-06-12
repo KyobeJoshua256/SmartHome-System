@@ -1240,7 +1240,13 @@ class RoomMemberAdminView(AuditMixin, AdminAccessMixin, ModelView):
     def on_model_change(self, form, model, is_created: bool) -> None:
         """
         Coerce user_id = 0 (the '--- Vacant ---' sentinel) to None, then
-        keep status consistent with whether a user is assigned.
+        keep RoomMember.status AND Room.status consistent with whether a user
+        is assigned.
+
+        Bug fix: previously only the RoomMember row's status was updated;
+        the parent Room.status was never flipped to ACTIVE on assignment or
+        back to VACANT on release, so rooms appeared permanently VACANT in
+        the UI even after allocation.
         """
         super().on_model_change(form, model, is_created)
 
@@ -1256,11 +1262,39 @@ class RoomMemberAdminView(AuditMixin, AdminAccessMixin, ModelView):
                 model.status = RoomStatus.VACANT
             if model.vacated_at is None:
                 model.vacated_at = now
+
+            # Sync Room.status: only vacate if no other active occupants remain
+            if model.room_id:
+                self.session.flush()  # ensure model.id is available for exclusion
+                other_active_member = (
+                    self.session.query(RoomMember)
+                    .filter(
+                        RoomMember.room_id == model.room_id,
+                        RoomMember.status == RoomStatus.ACTIVE,
+                        RoomMember.id != model.id,
+                    ).first()
+                )
+                other_active_guest = (
+                    self.session.query(GuestRoom)
+                    .filter_by(room_id=model.room_id, status=RoomStatus.ACTIVE)
+                    .first()
+                ) if not other_active_member else None
+
+                if not other_active_member and not other_active_guest:
+                    room = self.session.get(Room, model.room_id)
+                    if room and room.status == RoomStatus.ACTIVE:
+                        room.status = RoomStatus.VACANT
         else:
             # Room is being assigned to a member
             if model.status in (RoomStatus.VACANT, RoomStatus.INACTIVE):
                 model.status = RoomStatus.ACTIVE
                 model.vacated_at = None
+
+            # Sync Room.status → ACTIVE
+            if model.room_id:
+                room = self.session.get(Room, model.room_id)
+                if room and room.status != RoomStatus.ACTIVE:
+                    room.status = RoomStatus.ACTIVE
 
     def render(self, template, **kwargs):
         kwargs.setdefault("model_name", self.name)
@@ -1385,6 +1419,17 @@ class GuestRoomAdminView(AuditMixin, AdminAccessMixin, ModelView):
         Convert valid_days from comma-separated string to list when saved
         via the admin form.  The model's @validates('valid_days') will then
         normalise and validate the values.
+
+        Also ensures Room.status is kept in sync:
+        - When a GuestRoom row becomes ACTIVE (new or re-activated), the
+          parent Room is flipped to ACTIVE.
+        - When a GuestRoom row is set to EXPIRED/non-ACTIVE directly via
+          the form, the Room is released to VACANT if no other occupants
+          remain.
+
+        Bug fix: previously this hook only handled valid_days; Room.status
+        was never updated, so rooms stayed VACANT after a guest allocation
+        was created through the CRUD form.
         """
         super().on_model_change(form, model, is_created)
 
@@ -1394,6 +1439,40 @@ class GuestRoomAdminView(AuditMixin, AdminAccessMixin, ModelView):
                 [d.strip().lower() for d in raw.split(",") if d.strip()]
                 if raw else None
             )
+
+        # Ensure expires_at is timezone-aware (DateTimeField gives naive dt)
+        if model.expires_at is not None and model.expires_at.tzinfo is None:
+            model.expires_at = model.expires_at.replace(tzinfo=KAMPALA_TZ)
+
+        # Sync Room.status based on the allocation's new status
+        if model.room_id:
+            self.session.flush()
+            room = self.session.get(Room, model.room_id)
+            if room:
+                if model.status == RoomStatus.ACTIVE:
+                    # This allocation is active — room must be ACTIVE
+                    if room.status != RoomStatus.ACTIVE:
+                        room.status = RoomStatus.ACTIVE
+                else:
+                    # Allocation is no longer active — vacate room if no other
+                    # occupants remain
+                    other_active_guest = (
+                        self.session.query(GuestRoom)
+                        .filter(
+                            GuestRoom.room_id == model.room_id,
+                            GuestRoom.status == RoomStatus.ACTIVE,
+                            GuestRoom.id != model.id,
+                        ).first()
+                    )
+                    other_active_member = (
+                        self.session.query(RoomMember)
+                        .filter_by(room_id=model.room_id, status=RoomStatus.ACTIVE)
+                        .first()
+                    ) if not other_active_guest else None
+
+                    if not other_active_guest and not other_active_member:
+                        if room.status == RoomStatus.ACTIVE:
+                            room.status = RoomStatus.VACANT
 
     def render(self, template, **kwargs):
         kwargs.setdefault("model_name", self.name)
@@ -1406,18 +1485,21 @@ class GuestRoomAdminView(AuditMixin, AdminAccessMixin, ModelView):
 # ---------------------------------------------------------------------------
 
 class RoomAllocationView(AdminAccessMixin, BaseView):
-    """
-    Custom operation view: pick a vacant room from the pool and assign it to
-    a household member.  Uses RoomService.allocate_to_member so the existing
-    VACANT/INACTIVE row is reused, preserving device mappings.
-    """
+    """Custom operation view: pick a vacant room from the pool and assign it to a household member."""
 
     @expose("/", methods=["GET", "POST"])
     def index(self):
         from HomeServer import database
-
+        from HomeServer.models.users import User  # Add this import
+        
         form = AllocateMemberForm()
-
+        
+        # Optional: Add validation to ensure form choices are loaded correctly
+        if not form.user_id.choices or len(form.user_id.choices) <= 1:
+            # Log warning if no users found
+            logger.warning("No users available for room allocation. Check user database.")
+            flash("Warning: No users found in system. Please create users first.", "warning")
+        
         if form.validate_on_submit():
             try:
                 room_member = database.session.get(RoomMember, form.room_member_id.data)
@@ -1425,22 +1507,70 @@ class RoomAllocationView(AdminAccessMixin, BaseView):
                     flash("Room allocation record not found.", "error")
                     return redirect(url_for("roomallocationview.index"))
 
-                RoomService.allocate_to_member(
-                    room_id=room_member.room_id,
-                    user_id=form.user_id.data,
-                    room_type=RoomType(form.room_type.data),
-                    can_view=form.can_view.data,
-                    can_control=form.can_control.data,
-                    can_manage=form.can_manage.data,
+                # Get the selected user (could be inactive)
+                user_id = form.user_id.data
+                selected_user = database.session.get(User, user_id)
+                
+                if selected_user is None:
+                    flash("Selected user not found.", "error")
+                    return redirect(url_for("roomallocationview.index"))
+                
+                # Log that we're allocating to a potentially inactive user
+                if not selected_user.is_active:
+                    logger.info(
+                        "Allocating room to inactive user %s (id=%s) by admin %s",
+                        selected_user.username, selected_user.id,
+                        getattr(current_user, "username", "unknown")
+                    )
+                    flash(f"Note: User '{selected_user.username}' is currently INACTIVE.", "info")
+
+                # Guard: same user cannot already be ACTIVE in this room
+                already_active = (
+                    database.session.query(RoomMember)
+                    .filter(
+                        RoomMember.room_id == room_member.room_id,
+                        RoomMember.user_id == user_id,
+                        RoomMember.status == RoomStatus.ACTIVE,
+                        RoomMember.id != room_member.id,
+                    ).first()
                 )
+                if already_active:
+                    flash(
+                        "That user already has an active allocation for this room.",
+                        "warning",
+                    )
+                    return redirect(url_for("roomallocationview.index"))
+
+                # Assign the room (allow even for inactive users)
+                room_member.user_id = user_id
+                room_member.room_type = RoomType(form.room_type.data)
+                room_member.status = RoomStatus.ACTIVE
+                room_member.can_view = form.can_view.data
+                room_member.can_control = form.can_control.data
+                room_member.can_manage = form.can_manage.data
+                room_member.vacated_at = None
+
+                # Sync the parent Room → ACTIVE
+                room = database.session.get(Room, room_member.room_id)
+                if room and room.status != RoomStatus.ACTIVE:
+                    room.status = RoomStatus.ACTIVE
+
                 database.session.commit()
+                
+                # Log the allocation with user status info
                 logger.info(
-                    "[ADMIN ACTION] Allocated room_id=%s to user_id=%s by %s",
-                    room_member.room_id, form.user_id.data,
+                    "[ADMIN ACTION] Allocated room_id=%s to user_id=%s (active=%s) by %s",
+                    room_member.room_id, user_id,
+                    selected_user.is_active,
                     getattr(current_user, "username", "unknown"),
                 )
-                flash(f"Room '{room_member.room.name}' successfully allocated.", "success")
+                
+                flash(
+                    f"Room '{room_member.room.name}' successfully allocated to {selected_user.username}.",
+                    "success"
+                )
                 return redirect(url_for("roomallocationview.index"))
+                
             except Exception as exc:
                 database.session.rollback()
                 logger.exception("Failed to allocate room to member")
@@ -1448,59 +1578,120 @@ class RoomAllocationView(AdminAccessMixin, BaseView):
 
         return self.render("admin/rooms/room_allocation.html", form=form)
 
-
 # ---------------------------------------------------------------------------
 # 9e. GuestAllocationView — allocate a vacant room to a guest (admin only)
 # ---------------------------------------------------------------------------
+# In HomeServer/admin.py - Replace GuestAllocationView
 
 class GuestAllocationView(AdminAccessMixin, BaseView):
     """
-    Custom operation view: allocate a VACANT room to a guest user with
-    time-bounded access.  Uses RoomService.allocate_to_guest.
-    invited_by is always the currently logged-in admin.
+    Custom operation view: allocate a VACANT room to a PHYSICAL WALK-IN GUEST.
+    This is for front-desk style check-ins, not digital guest users.
     """
 
     @expose("/", methods=["GET", "POST"])
     def index(self):
         from HomeServer import database
-
+        from HomeServer.models.guests import GuestStatus
+        
         form = AllocateGuestForm()
-
+        
         if form.validate_on_submit():
             try:
-                # Parse valid_days from the comma string if provided
-                raw_days = form.valid_days.data
-                valid_days = (
-                    [d.strip().lower() for d in raw_days.split(",") if d.strip()]
-                    if raw_days else None
-                )
-
-                RoomService.allocate_to_guest(
-                    room_id=form.room_id.data,
-                    guest_id=form.guest_id.data,
-                    invited_by_username=current_user.username,
-                    expires_at=form.expires_at.data,
-                    can_view=form.can_view.data,
-                    can_control=form.can_control.data,
-                    valid_from=form.valid_from.data or None,
-                    valid_until=form.valid_until.data or None,
-                    valid_days=valid_days,
-                )
+                # Get the physical guest
+                guest = database.session.get(Guest, form.guest_id.data)
+                if guest is None:
+                    flash("Guest not found.", "error")
+                    return redirect(url_for("guestallocationview.index"))
+                
+                # Get the room
+                room = database.session.get(Room, form.room_id.data)
+                if room is None:
+                    flash("Room not found.", "error")
+                    return redirect(url_for("guestallocationview.index"))
+                
+                # Check if room is still vacant
+                if room.status != RoomStatus.VACANT:
+                    flash(f"Room '{room.name}' is no longer vacant. Please select another room.", "error")
+                    return redirect(url_for("guestallocationview.index"))
+                
+                # Check if guest is already checked in elsewhere
+                if guest.status == GuestStatus.CHECKED_IN:
+                    flash(f"Guest '{guest.full_name}' is already checked into another room.", "error")
+                    return redirect(url_for("guestallocationview.index"))
+                
+                # Check the guest in to the room
+                guest.check_in(room.id)
+                
+                # Set expected checkout if provided
+                if form.expected_checkout.data:
+                    guest.expected_checkout = form.expected_checkout.data
+                    if guest.expected_checkout.tzinfo is None:
+                        guest.expected_checkout = guest.expected_checkout.replace(tzinfo=KAMPALA_TZ)
+                
+                # Add notes if provided
+                if form.notes.data:
+                    existing_notes = guest.notes or ""
+                    new_note = f"[{now_kampala().strftime('%Y-%m-%d %H:%M')}] Room {room.name} allocation: {form.notes.data}"
+                    guest.notes = f"{existing_notes}\n{new_note}" if existing_notes else new_note
+                
                 database.session.commit()
+                
                 logger.info(
-                    "[ADMIN ACTION] Guest room allocated room_id=%s guest_id=%s by %s",
-                    form.room_id.data, form.guest_id.data,
-                    current_user.username,
+                    "[ADMIN ACTION] Checked in physical guest %s (id=%s) to room %s (id=%s) by %s",
+                    guest.full_name, guest.id, room.name, room.id,
+                    getattr(current_user, "username", "unknown"),
                 )
-                flash("Room successfully allocated to guest.", "success")
+                
+                flash(
+                    f"✅ Successfully checked in '{guest.full_name}' to room '{room.name}'.",
+                    "success"
+                )
                 return redirect(url_for("guestallocationview.index"))
+                
             except Exception as exc:
                 database.session.rollback()
-                logger.exception("Failed to allocate room to guest")
-                flash(f"Error allocating room to guest: {exc}", "error")
-
+                logger.exception("Failed to allocate room to physical guest")
+                flash(f"Error allocating room: {exc}", "error")
+        
+        # Debug: Log current form choices
+        logger.info(f"Room choices: {form.room_id.choices}")
+        logger.info(f"Guest choices: {form.guest_id.choices}")
+        
         return self.render("admin/rooms/guest_allocation.html", form=form)
 
+class QuickGuestCreateView(AdminAccessMixin, BaseView):
+    """Quickly create a physical walk-in guest for immediate room allocation."""
+
+    @expose("/", methods=["GET", "POST"])
+    def index(self):
+        from HomeServer import database
+        
+        form = QuickGuestForm()
+        
+        if form.validate_on_submit():
+            try:
+                guest = Guest(
+                    full_name=form.full_name.data,
+                    phone=form.phone.data or None,
+                    notes=form.notes.data or None,
+                    added_by_id=current_user.id,
+                    status=GuestStatus.EXPECTED,
+                )
+                database.session.add(guest)
+                database.session.commit()
+                
+                flash(f"✅ Guest '{guest.full_name}' created successfully!", "success")
+                
+                # Redirect to allocation form with this guest preselected
+                return redirect(url_for("guestallocationview.index"))
+                
+            except Exception as exc:
+                database.session.rollback()
+                logger.exception("Failed to create guest")
+                flash(f"Error creating guest: {exc}", "error")
+        
+        return self.render("admin/rooms/quick_guest_create.html", form=form)
 
 # ---------------------------------------------------------------------------
 # 9f. RoomManagementDashboard — overview + quick-action endpoints
@@ -1588,7 +1779,7 @@ class RoomManagementDashboard(AdminAccessMixin, BaseView):
             getattr(current_user, "username", "unknown"),
         )
         flash(f"Guest allocation for room '{guest.room.name}' has been expired.", "success")
-        return redirect(url_for("roommember.index_view"))
+        return redirect(url_for("roommanagementdashboard.index"))
 
     @expose("/release-room/<int:member_id>")
     def release_room(self, member_id):
@@ -1611,7 +1802,7 @@ class RoomManagementDashboard(AdminAccessMixin, BaseView):
             getattr(current_user, "username", "unknown"),
         )
         flash(f"Room '{member.room.name}' has been released back to the vacant pool.", "success")
-        return redirect(url_for("roommember.index_view"))
+        return redirect(url_for("roommanagementdashboard.index"))
 
 
 # ---------------------------------------------------------------------------
@@ -1866,10 +2057,48 @@ class GuestAdminView(AuditMixin, AdminAccessMixin, ModelView):
     # ------------------------------------------------------------------
 
     def on_model_change(self, form, model, is_created: bool) -> None:
-        """Auto-set added_by on creation; model validators handle the rest."""
+        """
+        Auto-set added_by on creation, then delegate room/status transitions
+        to the model's own ``check_in`` / ``check_out`` so ``Room.status``
+        stays in sync when a Guest is assigned a room (or checked out)
+        directly through the create/edit form — not just via the bulk
+        check-in/check-out actions.
+        """
         super().on_model_change(form, model, is_created)
         if is_created:
             model.added_by_id = current_user.id
+
+        new_status = form.status.data
+        # Read room_id from the model (already normalised by GuestForm.validate_room_id,
+        # which converts 0 → None before on_model_change runs).  Reading directly from
+        # form.room_id.data could still be 0 if the validator hasn't run for this field.
+        new_room_id = model.room_id  # set by Flask-Admin from form before this hook
+
+        if new_status == GuestStatus.CHECKED_IN.value:
+            target_room_id = new_room_id if new_room_id is not None else model.room_id
+            if target_room_id is None:
+                raise ValidationError("A room must be selected to check in a guest.")
+            if (
+                model.status != GuestStatus.CHECKED_IN
+                or model.room_id != target_room_id
+            ):
+                model.check_in(target_room_id)
+            else:
+                model.room_id = target_room_id
+
+        elif new_status in (GuestStatus.EXPECTED.value, GuestStatus.CHECKED_OUT.value):
+            if model.status == GuestStatus.CHECKED_IN:
+                model.check_out()
+                if new_status == GuestStatus.CHECKED_OUT:
+                    model.status = GuestStatus.CHECKED_OUT
+                else:
+                    model.status = GuestStatus.EXPECTED
+                    model.checked_in_at = None
+                    model.checked_out_at = None
+                    model.expected_checkout = None
+            else:
+                model.status = GuestStatus(new_status)
+                model.room_id = new_room_id
 
     # ------------------------------------------------------------------
     # Bulk actions — delegate to model business logic

@@ -12,7 +12,8 @@ from sqlalchemy.orm import relationship, validates
 
 from HomeServer import database
 from .utils import TimestampMixin, now_kampala, KAMPALA_TZ
-from .rooms import Room, RoomStatus
+from .rooms import Room, RoomStatus, GuestRoom
+from .rooms import RoomMember
 
 
 # ---------------------------------------------------------------------------
@@ -30,7 +31,14 @@ class GuestStatus(enum.Enum):
 # ---------------------------------------------------------------------------
 
 class Guest(TimestampMixin, database.Model):
-    """A physical visitor to the home."""
+    """
+    A physical visitor to the home (front-desk style log).
+
+    Distinct from ``GuestRoom``: a ``Guest`` is a *person* who may or may not
+    have a User account / app access. ``GuestRoom`` is a time-bounded digital
+    access grant tied to a ``User`` account. The two are independent — a
+    ``Guest`` row never implies a ``GuestRoom`` row and vice versa.
+    """
     __tablename__ = "guests"
 
     id        = Column(Integer, primary_key=True)
@@ -57,6 +65,7 @@ class Guest(TimestampMixin, database.Model):
 
     __table_args__ = (
         Index("ix_guests_status", "status"),
+        Index("ix_guests_room_id", "room_id"),
     )
 
     # ── Validators ────────────────────────────────────────────────────────
@@ -77,6 +86,46 @@ class Guest(TimestampMixin, database.Model):
             raise ValueError("Name must be at least 2 characters.")
         return name
 
+    # ── Internal helpers ─────────────────────────────────────────────────
+
+    @staticmethod
+    def _room_has_other_active_occupants(room_id: int, exclude_guest_id: int | None) -> bool:
+        """
+        Return True if ``room_id`` still has any other active occupant —
+        a checked-in Guest (other than ``exclude_guest_id``), an ACTIVE
+        RoomMember, or an ACTIVE GuestRoom allocation.
+
+        Used to decide whether a room can be released back to VACANT,
+        mirroring the convention used by ``RoomService``.
+        """
+        other_guest = (
+            Guest.query
+            .filter(
+                Guest.room_id == room_id,
+                Guest.status == GuestStatus.CHECKED_IN,
+            )
+        )
+        if exclude_guest_id is not None:
+            other_guest = other_guest.filter(Guest.id != exclude_guest_id)
+        if other_guest.first():
+            return True
+
+        active_member = RoomMember.query.filter_by(
+            room_id=room_id,
+            status=RoomStatus.ACTIVE,
+        ).first()
+        if active_member:
+            return True
+
+        active_guest_room = GuestRoom.query.filter_by(
+            room_id=room_id,
+            status=RoomStatus.ACTIVE,
+        ).first()
+        if active_guest_room:
+            return True
+
+        return False
+
     # ── Business logic ────────────────────────────────────────────────────
 
     def check_in(self, room_id: int) -> None:
@@ -88,7 +137,16 @@ class Guest(TimestampMixin, database.Model):
         Multiple guests can share the same GUEST-type room. The room's
         ``status`` is set to ACTIVE on first check-in and stays ACTIVE
         while at least one guest is currently checked into it.
+
+        If the guest was previously checked into a *different* room, that
+        room is released first (mirrors ``check_out`` behaviour) so a
+        re-assignment via the admin form doesn't leave the old room
+        incorrectly marked ACTIVE.
         """
+        previous_room_id = self.room_id
+        if previous_room_id is not None and previous_room_id != room_id:
+            self._release_room(previous_room_id, exclude_self=True)
+
         self.status = GuestStatus.CHECKED_IN
         self.room_id = room_id
         self.checked_in_at = now_kampala()
@@ -104,7 +162,9 @@ class Guest(TimestampMixin, database.Model):
         Room status handling
         ---------------------
         The room is only released back to VACANT when this is the *last*
-        currently-checked-in guest in that room — co-occupants are not
+        currently-checked-in guest in that room AND no RoomMember or
+        GuestRoom allocation is still active on it — co-occupants (whether
+        other guests, members, or digital guest allocations) are not
         affected by one guest's checkout.
         """
         previous_room_id = self.room_id
@@ -114,19 +174,15 @@ class Guest(TimestampMixin, database.Model):
         self.room_id = None
 
         if previous_room_id is not None:
-            other_checked_in = (
-                Guest.query
-                .filter(
-                    Guest.room_id == previous_room_id,
-                    Guest.status == GuestStatus.CHECKED_IN,
-                    Guest.id != self.id,
-                )
-                .first()
-            )
-            if not other_checked_in:
-                room = database.session.get(Room, previous_room_id)
-                if room and room.status == RoomStatus.ACTIVE:
-                    room.status = RoomStatus.VACANT
+            self._release_room(previous_room_id, exclude_self=True)
+
+    def _release_room(self, room_id: int, exclude_self: bool) -> None:
+        """Release ``room_id`` to VACANT if no other occupant remains."""
+        exclude_id = self.id if exclude_self else None
+        if not self._room_has_other_active_occupants(room_id, exclude_id):
+            room = database.session.get(Room, room_id)
+            if room and room.status == RoomStatus.ACTIVE:
+                room.status = RoomStatus.VACANT
 
     def to_dict(self) -> dict:
         return {
