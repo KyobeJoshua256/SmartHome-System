@@ -138,24 +138,7 @@
        class="nav-item {% if request.endpoint == 'rooms.index_view' %}active{% endif %}">
         <i class="fas fa-door-open"></i><span>Rooms</span>
     </a>
-    <a href="{{ url_for('room_allocations.index_view') }}"
-       class="nav-item {% if request.endpoint == 'room_allocations.index_view' %}active{% endif %}">
-        <i class="fas fa-bed"></i><span>Room Allocation</span>
-    </a>
-
-    <a href="{{ url_for('guest_allocations.index_view') }}"
-        class="nav-item {% if request.endpoint == 'guest_allocations.index_view' %}active{% endif %}">
-        <i class="fas fa-user-clock"></i><span>Guest Allocation</span>
-    </a>
-    <!-- Kept as .index for BaseViews -->
-    <a href="{{ url_for('roommanagementdashboard.index') }}"
-       class="nav-item {% if request.endpoint == 'roommanagementdashboard.index' %}active{% endif %}">
-        <i class="fas fa-chart-pie"></i><span>Room Dashboard</span>
-    </a>
-
-    <div class="nav-divider"></div>
-    <div class="nav-label">Room Operations</div>
-    <!-- Kept as .index for BaseViews -->
+   
     <a href="{{ url_for('roomallocationview.index') }}"
        class="nav-item {% if request.endpoint == 'roomallocationview.index' %}active{% endif %}">
         <i class="fas fa-user-plus"></i><span>Allocate a Member</span>
@@ -169,6 +152,11 @@
     <a href="{{ url_for('bulkroomoperationview.index') }}"
        class="nav-item {% if request.endpoint == 'bulkroomoperationview.index' %}active{% endif %}">
         <i class="fas fa-layer-group"></i><span>Bulk Operations</span>
+    </a>
+ 
+    <a href="{{ url_for('roommanagementdashboard.index') }}"
+       class="nav-item {% if request.endpoint == 'roommanagementdashboard.index' %}active{% endif %}">
+        <i class="fas fa-chart-pie"></i><span>Room Dashboard</span>
     </a>
 
     <div class="nav-divider"></div>

@@ -21,7 +21,7 @@ from sqlalchemy.orm import relationship, validates
 from sqlalchemy import event
 
 from HomeServer import database
-from .users import User
+from .users import User, ensure_aware, now_kampala
 from .utils import TimestampMixin, KAMPALA_TZ, VALID_DAY_NAMES
 
 
@@ -190,6 +190,15 @@ class GuestRoom(TimestampMixin, database.Model):
     ``is_currently_accessible`` correctly handles daily windows that cross
     midnight (e.g. 22:00–02:00) by comparing the elapsed-second offset from
     midnight rather than using a simple ``≤`` chain.
+
+    Timezone note
+    -------------
+    SQLite does not persist tzinfo even for columns declared with
+    ``DateTime(timezone=True)`` — datetimes round-trip as naive. All
+    comparisons against "now" therefore go through ``ensure_aware()`` to
+    normalise stored values to Kampala time before comparing against
+    ``now_kampala()`` (also aware), avoiding
+    ``TypeError: can't compare offset-naive and offset-aware datetimes``.
     """
     __tablename__ = "guest_rooms"
 
@@ -278,9 +287,10 @@ class GuestRoom(TimestampMixin, database.Model):
         if self.status != RoomStatus.ACTIVE:
             return False
 
-        now = datetime.now(tz=KAMPALA_TZ)
+        now = now_kampala()
+        expires_at = ensure_aware(self.expires_at)
 
-        if now >= self.expires_at:
+        if expires_at is not None and now >= expires_at:
             return False
 
         if self.valid_days:
@@ -325,7 +335,7 @@ class GuestRoom(TimestampMixin, database.Model):
         """
         self.status = RoomStatus.EXPIRED
         self.guest_id = None
-        self.vacated_at = datetime.now(tz=KAMPALA_TZ)
+        self.vacated_at = now_kampala()
 
         # Only vacate the room if no other active occupants remain
         other_active_guest = GuestRoom.query.filter(
@@ -532,7 +542,7 @@ class RoomService:
         """
         member.status = RoomStatus.INACTIVE
         member.user_id = None
-        member.vacated_at = datetime.now(tz=KAMPALA_TZ)
+        member.vacated_at = now_kampala()
 
         # Check whether any other members are still actively using this room
         other_active = RoomMember.query.filter(
@@ -607,7 +617,7 @@ class RoomService:
         if expires_at.tzinfo is None:
             raise ValueError(
                 "expires_at must be timezone-aware. "
-                "Use datetime.now(tz=KAMPALA_TZ) or similar."
+                "Use now_kampala() or similar."
             )
 
         allocation = GuestRoom(
@@ -649,12 +659,25 @@ class RoomService:
         background scheduler context where no Flask request (and therefore no
         outer transaction) exists.  All other service methods leave the commit
         to the caller.
+
+        Timezone note
+        -------------
+        ``expires_at`` is fetched per-row and normalised with
+        ``ensure_aware()`` before comparison, since SQLite may return naive
+        datetimes for ``DateTime(timezone=True)`` columns regardless of how
+        they were written.
         """
-        now = datetime.now(tz=KAMPALA_TZ)
-        expired_list = GuestRoom.query.filter(
-            GuestRoom.expires_at <= now,
+        now = now_kampala()
+        candidates = GuestRoom.query.filter(
             GuestRoom.status == RoomStatus.ACTIVE,
         ).all()
+
+        expired_list = [
+            allocation
+            for allocation in candidates
+            if ensure_aware(allocation.expires_at) is not None
+            and ensure_aware(allocation.expires_at) <= now
+        ]
 
         for allocation in expired_list:
             allocation.expire()
